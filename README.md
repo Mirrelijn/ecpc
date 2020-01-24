@@ -1,2 +1,3 @@
 # ecpc
-Code for the ecpc method for omics: Empirical bayes based Co-data learning for Prediction and Covariate selection
+The ecpc method for co-data learning for omics:
+Empirical bayes based Co-data learnt Prediction and Covariate selection
