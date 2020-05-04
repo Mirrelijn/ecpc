@@ -1,0 +1,17 @@
+Package: ecpc
+Type: Package
+Title: Flexible Co-data Learning For High-dimensional Prediction
+Version: 1.0
+Date: 2020-05-04
+Author: Mirrelijn van Nee, Lodewyk Wessels, Mark van de Wiel
+Maintainer: Mirrelijn van Nee <m.vannee@amsterdamumc.nl>
+Depends: R (>= 3.1.0)
+Imports: penalized, glmnet
+Suggests: MASS, Rsolnp, gglasso, mvtnorm, Rsolnp, foreach, doParallel
+Description: This package fits linear, logistic and Cox survival regression models penalised with adaptive multi-group ridge penalties.
+  The multi-group penalties correspond to groups of covariates defined by (multiple) co-data sources. 
+  Group hyperparameters are estimated with an empirical Bayes method of moments, penalised with an extra level of hypershrinkage.
+  Various types of hypershrinkage may be used for various co-data.
+  The method accomodates inclusion of unpenalised covariates and posterior selection of covariates.
+  The model fit is used to predict for new samples.
+License: What license is it under?
