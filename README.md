@@ -1,3 +1,4 @@
 # ecpc
-The ecpc method for co-data learning for omics:
+Flexible co-data learning for high-dimensional prediction.
+An R-package for ecpc;
 Empirical bayes based Co-data learnt Prediction and Covariate selection
