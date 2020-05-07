@@ -7,7 +7,7 @@ ecpc co-data learning
 }
 \description{
 %%  ~~ A concise (1-5 lines) description of what the function does. ~~
-Fits a generalised linear (linear, logistic) or Cox model, penalised with adaptive multi-group penalties.
+Fits a generalised linear (linear, logistic) or Cox survival model, penalised with adaptive multi-group ridge penalties.
 The multi-group penalties correspond to groups of covariates defined by (multiple) co-data sources. 
 Group hyperparameters are estimated with an empirical Bayes method of moments, penalised with an extra level of hypershrinkage.
 Various types of hypershrinkage may be used for various co-data, including overlapping groups, hierarchical groups and continuous co-data.
@@ -17,8 +17,8 @@ ecpc(Y, X, groupings, groupings.grouplvl = NaN,
 hypershrinkage = c("ridge","lasso","hierLasso","lasso,ridge","hierLasso,ridge"), 
 unpen = NULL, intrcpt = TRUE, model=c("linear","logistic","cox"), 
 postselection = "elnet,dense", maxsel = 10, 
-lambda = "ML", fold = 10, sigmasq = NaN, w = NaN, 
-nsplits = 100, weights = TRUE, Y2 = NaN, X2 = NaN, 
+lambda = "CV", fold = 10, sigmasq = NaN, w = NaN, 
+nsplits = 100, weights = TRUE, profplotRSS = F, Y2 = NaN, X2 = NaN, 
 compare = TRUE, mu = FALSE, normalise = FALSE)
 }
 %- maybe also 'usage' for other objects documented here.
@@ -49,7 +49,7 @@ Unpenalised covariates; vector with indices of covariates that should not be pen
 }
   \item{intrcpt}{
 %%     ~~Describe \code{intrcpt} here~~
-T/F to include/exclude an intercept (always unpenalised). Included by default for linear and logistic, excluded for Cox for which the baseline hazard is estimated.
+Should an intercept be included? Included by default for linear and logistic, excluded for Cox for which the baseline hazard is estimated.
 }
   \item{model}{
 %%     ~~Describe \code{model} here~~
@@ -81,12 +81,15 @@ Grouping weights: m-dimensional vector. If given, grouping weights are fixed.
 }
   \item{nsplits}{
 %%     ~~Describe \code{nsplits} here~~
-Number of splits used in the Residual Sum of Squares criterion to estimate the optimal hyperlambda.
+Number of splits used in the Residual Sum of Squares (RSS) criterion to estimate the optimal hyperlambda.
 }
   \item{weights}{
 %%     ~~Describe \code{weights} here~~
-TRUE or FALSE whether or not weights are used in hypershrinkage to correct for group size.
+Should weights be used in hypershrinkage to correct for group size (default TRUE)?
 }
+  \item{profplotRSS}{
+  Should a profile plot of the residual sum of squares (RSS) criterium be shown?
+  }
   \item{Y2}{
 %%     ~~Describe \code{Y2} here~~
 (optional) Independent response data to compare with predicted response.
@@ -132,7 +135,7 @@ A list with the following elements:
 If 'compare'=TRUE, ordinary ridge estimates and predictions are given;
   \item{betaridge}{Estimated regression coefficients for ordinary ridge penalty.}
   \item{interceptridge}{Estimated intercept for ordinary ridge penalty.}
-  \item{lambdaridge}{Estimated ridge penalty for ordinary ridge penalty.}
+  \item{lambdaridge}{Estimated ridge penalty.}
   \item{Ypredridge}{If independent test set 'X2' is given, ordinary ridge predictions for the test set.}
   \item{MSEridge}{If independent test set 'X2', 'Y2' is given, mean squared error of the ordinary ridge                      predictions.}
 If posterior selection is performed;
@@ -158,5 +161,63 @@ Mirrelijn van Nee, Lodewyk Wessels, Mark van de Wiel
 %% ~~objects to See Also as \code{\link{help}}, ~~~
 }
 \examples{
+#####################
+# Simulate toy data #
+#####################
+p<-300 #number of covariates
+n<-100 #sample size training data set
+n2<-100 #sample size test data set
+
+#simulate all betas i.i.d. from beta_k~N(mean=0,sd=sqrt(0.1)):
+muBeta<-0 #prior mean
+varBeta<-0.1 #prior variance
+indT1<-rep(1,p) #vector with group numbers all 1 (all simulated from same normal distribution)
+
+#simulate test and training data sets:
+Dat<-simDat(n,p,n2,muBeta,varBeta,indT1,sigma=1,model='linear') 
+str(Dat) #Dat contains centered observed data, response data and regression coefficients
+
+##########################
+# Make co-data groupings #
+##########################
+#Grouping 1: G random groups
+G <- 5 #number of groups
+#sample random categorical co-data:
+categoricalRandom <- sample(1:G,p,replace=T) 
+#make grouping, i.e. list with G groups:
+groupingRandom <- lapply(1:G,function(g){which(categoricalRandom==g)}) 
+
+#Grouping 2: informative hierarchical grouping
+continuousCodata <- abs(Dat$beta) #use the magnitude of beta as continuous co-data
+#Use adaptive discretisation to find a good discretisation of the continuous co-data;
+# discretise in groups of covariates of various sizes:
+groupingHierarchical <- splitMedian(values=continuousCodata,index = 1:p,
+                        minGroupSize = 50,split="both") 
+# and obtain grouping on group level that defines the hierarchy:
+hierarchy.grouplevel <- obtainHierarchy(grouping = groupingHierarchical) 
+#visualise hierarchical groups:
+#visualiseGrouping(Grouping = groupingHierarchical,grouping.grouplvl = hierarchy.grouplevel) 
+ 
+############ 
+# Fit ecpc #
+############
+#fit ecpc for the two groupings, with ridge hypershrinkage for grouping 1, 
+# and hierarchical lasso and ridge for grouping 2.
+tic<-proc.time()[[3]]
+fit <- ecpc(Y=Dat$Y,X=Dat$Xctd,groupings=list(groupingRandom,groupingHierarchical),
+           groupings.grouplvl=list(NULL,hierarchy.grouplevel),
+           hypershrinkage=c("ridge","hierLasso,ridge"),
+           model="linear",maxsel=c(5,10,15,20),
+           Y2=Dat$Y2,X2=Dat$X2ctd)
+toc <- proc.time()[[3]]-tic
+
+fit$tauglobal #estimated global prior variance
+fit$gamma #estimated group weights (concatenated for the groupings)
+fit$w #estimated grouping weights
+summary(fit$beta) #estimated regression coefficients
+summary(fit$betaPost) #estimated regression coefficients after posterior selection
+
+c(fit$MSEecpc,fit$MSEridge) #mean squared error on test set for ecpc and ordinary ridge
+fit$MSEPost #MSE on the test set of ecpc after posterior selection
 
 }

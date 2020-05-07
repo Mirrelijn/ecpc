@@ -5,7 +5,7 @@
 
 ecpc <- function(Y,X,groupings,groupings.grouplvl=NaN,
                  hypershrinkage,unpen=NULL,intrcpt=T,model,postselection="elnet+dense",maxsel=10,
-                 lambda=NaN,fold=10,sigmasq=NaN,w=NaN,
+                 lambda="CV",fold=10,sigmasq=NaN,w=NaN,
                  nsplits=100,weights=T,profplotRSS=F,
                  Y2=NaN,X2=NaN,compare=T,
                  mu=F,normalise=F
@@ -128,7 +128,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NaN,
   if(length(unpen)>0){
     penfctr[unpen] <- 0 #factor=0 for unpenalised covariates
     if(any(unlist(groupings)%in%unpen)){
-      warning("Unpenalised covariates removed from partition")
+      warning("Unpenalised covariates removed from grouping")
       for(i in 1:length(groupings)){
         for(j in 1:length(groupings[[i]])){
           if(all(groupings[[i]][[j]]%in%unpen)){
@@ -147,10 +147,10 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NaN,
   if(missing(hypershrinkage)){
     hypershrinkage<-rep("ridge",m)
   }
-  if(any(hypershrinkage == "hierLasso")){
+  if(any(grepl("hierLasso",hypershrinkage))){
     #nIt<-1
     if(missing(groupings.grouplvl)|is.nan(groupings.grouplvl)){
-      stop("Group index of group parameters missing")
+      stop("Grouping on group level for hierarchical groups is missing")
     }
   }
   indGrpsGlobal <- list(1:G[1]) #global group index in case we have multiple partitions
@@ -2967,11 +2967,31 @@ simDat <- function(n,p,n2=20,muGrp,varGrp,indT,sigma=1,model='linear',flag=F){
   )
 }
 
-#Perform cross-validation (TD: update)----
-cv.ecpc <- function(Y,X,postselection="elnet+dense",maxsel=30,
-                    type.measure="MSE",outerfolds=10,
-                    ncores=1,balance=T,lambdas,model,...){
+#Perform cross-validation----
+cv.ecpc <- function(Y,X,type.measure="MSE",outerfolds=10,
+                    lambdas=NULL,ncores=1,balance=T,...){
   ecpc.args <- list(...)
+  if(!is.element("model",names(ecpc.args))){
+    if(all(is.element(Y,c(0,1))) || is.factor(Y)){
+      model <- "logistic" 
+    } else if(all(is.numeric(Y)) & !(is.matrix(Y) && dim(Y)[2]==2)){
+      model <- "linear"
+    }else{
+      model <- "cox"
+    }
+  }else{
+    model <- ecpc.args$model
+  }
+  if(!is.element("postselection",names(ecpc.args))){
+    postselection <- "elnet,dense"
+  }else{
+    postselection <- ecpc.args$postselection
+  }
+  if(!is.element("maxsel",names(ecpc.args))){
+    maxsel <- 10
+  }else{
+    maxsel <- ecpc.args$maxsel
+  }
   
   n <- dim(X)[1]
   p <- dim(X)[2]
@@ -2981,7 +3001,7 @@ cv.ecpc <- function(Y,X,postselection="elnet+dense",maxsel=30,
     folds2 <- outerfolds
   }
   nfolds <- length(folds2)
-  if(missing(lambdas)){
+  if(length(lambdas)==0){
     lambdas <- rep(NaN,length(folds2))
   }
   
@@ -3003,14 +3023,24 @@ cv.ecpc <- function(Y,X,postselection="elnet+dense",maxsel=30,
                         postselection=postselection,maxsel = maxsel,model=model,
                         ...)
          Res[[i]]$time <- proc.time()[[3]]-tic
-         df2<-data.frame("Ypred"=c(Res[[i]]$Ypred,Res[[i]]$Ypredridge,c(Res[[i]]$YpredPost)))
-         df2$Method <- rep(c("ecpc","ordinary.ridge",paste("ecpc",maxsel,"vars",sep="")),each=length(folds2[[i]]))
-         df2$NumberSelectedVars <- rep(c(sum(Res[[i]]$beta!=0),p,maxsel),each=length(folds2[[i]]))
-         df2$Fold <- i
-         df2$Sample <- rep(folds2[[i]],2+length(maxsel))
-         df2$Time <-  Res[[i]]$time
-         df2$Truth <- rep(Y[folds2[[i]]],2+length(maxsel))
-         #df<-rbind(df,df2)
+         
+         if(postselection!=F){
+           df2<-data.frame("Ypred"=c(Res[[i]]$Ypred,Res[[i]]$Ypredridge,c(Res[[i]]$YpredPost)))
+           df2$Method <- rep(c("ecpc","ordinary.ridge",paste("ecpc",maxsel,"vars",sep="")),each=length(folds2[[i]]))
+           df2$NumberSelectedVars <- rep(c(sum(Res[[i]]$beta!=0),p,maxsel),each=length(folds2[[i]]))
+           df2$Fold <- i
+           df2$Sample <- rep(folds2[[i]],2+length(maxsel))
+           df2$Time <-  Res[[i]]$time
+           df2$Truth <- rep(Y[folds2[[i]]],2+length(maxsel))
+         }else{
+           df2<-data.frame("Ypred"=c(Res[[i]]$Ypred,Res[[i]]$Ypredridge))
+           df2$Method <- rep(c("ecpc","ordinary.ridge"),each=length(folds2[[i]]))
+           df2$NumberSelectedVars <- rep(c(sum(Res[[i]]$beta!=0),p),each=length(folds2[[i]]))
+           df2$Fold <- i
+           df2$Sample <- rep(folds2[[i]],2)
+           df2$Time <-  Res[[i]]$time
+           df2$Truth <- rep(Y[folds2[[i]]],2)
+         }
          
          df3<-data.frame("Group"=grpsno,
                          "Grouping"=grpngsno,
@@ -3020,7 +3050,6 @@ cv.ecpc <- function(Y,X,postselection="elnet+dense",maxsel=30,
          df3$Tau.ridge <- 1/Res[[i]]$lambdaridge #ordinary ridge tau^2
          df3$Method <- "ecpc"
          df3$Fold <- i
-         #dfGrps<-rbind(dfGrps,df3)
          
          print(paste(Sys.time(),"fold",i,"of",nfolds,"done"))
          
@@ -3041,13 +3070,23 @@ cv.ecpc <- function(Y,X,postselection="elnet+dense",maxsel=30,
                       postselection=postselection,maxsel = maxsel,model=model,
                       ...)
        Res[[i]]$time <- proc.time()[[3]]-tic
-       df2<-data.frame("Ypred"=c(Res[[i]]$Ypred,Res[[i]]$Ypredridge,c(Res[[i]]$YpredPost)))
-       df2$Method <- rep(c("ecpc","ordinary.ridge",paste("ecpc",maxsel,"vars",sep="")),each=length(folds2[[i]]))
-       df2$NumberSelectedVars <- rep(c(sum(Res[[i]]$beta!=0),p,maxsel),each=length(folds2[[i]]))
-       df2$Fold <- i
-       df2$Sample <- rep(folds2[[i]],2+length(maxsel))
-       df2$Time <-  Res[[i]]$time
-       df2$Truth <- rep(Y[folds2[[i]]],2+length(maxsel))
+       if(postselection!=F){
+         df2<-data.frame("Ypred"=c(Res[[i]]$Ypred,Res[[i]]$Ypredridge,c(Res[[i]]$YpredPost)))
+         df2$Method <- rep(c("ecpc","ordinary.ridge",paste("ecpc",maxsel,"vars",sep="")),each=length(folds2[[i]]))
+         df2$NumberSelectedVars <- rep(c(sum(Res[[i]]$beta!=0),p,maxsel),each=length(folds2[[i]]))
+         df2$Fold <- i
+         df2$Sample <- rep(folds2[[i]],2+length(maxsel))
+         df2$Time <-  Res[[i]]$time
+         df2$Truth <- rep(Y[folds2[[i]]],2+length(maxsel))
+       }else{
+         df2<-data.frame("Ypred"=c(Res[[i]]$Ypred,Res[[i]]$Ypredridge))
+         df2$Method <- rep(c("ecpc","ordinary.ridge"),each=length(folds2[[i]]))
+         df2$NumberSelectedVars <- rep(c(sum(Res[[i]]$beta!=0),p),each=length(folds2[[i]]))
+         df2$Fold <- i
+         df2$Sample <- rep(folds2[[i]],2)
+         df2$Time <-  Res[[i]]$time
+         df2$Truth <- rep(Y[folds2[[i]]],2)
+       }
        df<-rbind(df,df2)
        
        df3<-data.frame("Group"=grpsno,
