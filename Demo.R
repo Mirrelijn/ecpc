@@ -1,5 +1,6 @@
 #Demo ecpc
-# #required libraries
+#NOTE: in Rstudio; press ALT+o for overview of code section headings
+#load libraries
 library(mvtnorm) #for simulating data set with rmvnorm
 library(ggplot2) #for plots
 library(igraph) #for plots
@@ -11,7 +12,10 @@ library(glmnet)
 library(penalized)
 library(foreach) #for parallel computations
 library(doParallel) #for parallel computations
-#library(ecpc)
+
+#Download package from github;
+#library(devtools); install_github("Mirrelijn/ecpc",subdir = "Rpackage")
+library(ecpc)
 
 #Simulate data----
 p<-300 #number of covariates
