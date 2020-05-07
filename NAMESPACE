@@ -1,0 +1,5 @@
+exportPattern("^[[:alpha:]]+")
+import(stats)
+import(Matrix)
+import(glmnet)
+import(penalized)
