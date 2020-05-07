@@ -100,15 +100,15 @@ Should weights be used in hypershrinkage to correct for group size (default TRUE
 }
   \item{compare}{
 %%     ~~Describe \code{compare} here~~
-TRUE or FALSE to compare with ordinary ridge.
+Should an ordinary ridge model be fitted to compare with?
 }
   \item{mu}{
 %%     ~~Describe \code{mu} here~~
-TRUE/FALSE to include/exclude group prior means (default FALSE).
+Should group prior means be included (default FALSE)?
 }
   \item{normalise}{
 %%     ~~Describe \code{normalise} here~~
-TRUE/FALSE if group variances should/should not be normalised to sum to 1 (default FALSE).
+Should group variances be normalised to sum to 1 (default FALSE)?
 }
 }
 \details{
@@ -124,7 +124,7 @@ A list with the following elements:
   \item{beta}{Estimated regression coefficients; p-dimensional vector.}
   \item{intercept}{If included, the estimated intercept; scalar.}
   \item{tauglobal}{Estimated global prior variance; scalar.}
-  \item{gammatilde}{Estimated group weights before truncating negative weights to 0; vector of dimension                       the total number of groups.}
+  \item{gammatilde}{Estimated group weights before truncating negative weights to 0; vector of dimension the total number of groups.}
   \item{gamma}{Final estimated group weights; vector of dimension the total number of groups.}
   \item{w}{Estimated groupings weights; m-dimensional vector.}
   \item{penalties}{Estimated multi-group ridge penalties; p-dimensinional vector.}
@@ -137,12 +137,12 @@ If 'compare'=TRUE, ordinary ridge estimates and predictions are given;
   \item{interceptridge}{Estimated intercept for ordinary ridge penalty.}
   \item{lambdaridge}{Estimated ridge penalty.}
   \item{Ypredridge}{If independent test set 'X2' is given, ordinary ridge predictions for the test set.}
-  \item{MSEridge}{If independent test set 'X2', 'Y2' is given, mean squared error of the ordinary ridge                      predictions.}
+  \item{MSEridge}{If independent test set 'X2', 'Y2' is given, mean squared error of the ordinary ridge predictions.}
 If posterior selection is performed;
-  \item{betaPost}{Estimated regression coefficients for parsimonious models. If 'maxsel' is a vector,                        'betaPost' is a matrix with each column the vector estimate corresponding to the maximum                   number of selected covariates given in 'maxsel'.}
+  \item{betaPost}{Estimated regression coefficients for parsimonious models. If 'maxsel' is a vector, 'betaPost' is a matrix with each column the vector estimate corresponding to the maximum number of selected covariates given in 'maxsel'.}
   \item{interceptPost}{Estimated intercept coefficient for parsimonious models.}
-  \item{YpredPost}{If independent test set 'X2' is given, posterior selection model predictions for the                      test set.}
-  \item{MSEPost}{If independent test set 'X2', 'Y2' is given, mean squared error of the posterior selection                   model predictions.}
+  \item{YpredPost}{If independent test set 'X2' is given, posterior selection model predictions for the test set.}
+  \item{MSEPost}{If independent test set 'X2', 'Y2' is given, mean squared error of the posterior selection model predictions.}
 }
 \references{
 %% ~put references to the literature/web site here ~
