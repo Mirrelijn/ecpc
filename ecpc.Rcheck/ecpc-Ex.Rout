@@ -1,0 +1,70 @@
+
+R version 3.6.3 (2020-02-29) -- "Holding the Windsock"
+Copyright (C) 2020 The R Foundation for Statistical Computing
+Platform: x86_64-w64-mingw32/x64 (64-bit)
+
+R is free software and comes with ABSOLUTELY NO WARRANTY.
+You are welcome to redistribute it under certain conditions.
+Type 'license()' or 'licence()' for distribution details.
+
+  Natural language support but running in an English locale
+
+R is a collaborative project with many contributors.
+Type 'contributors()' for more information and
+'citation()' on how to cite R or R packages in publications.
+
+Type 'demo()' for some demos, 'help()' for on-line help, or
+'help.start()' for an HTML browser interface to help.
+Type 'q()' to quit R.
+
+> pkgname <- "ecpc"
+> source(file.path(R.home("share"), "R", "examples-header.R"))
+> options(warn = 1)
+> options(pager = "console")
+> base::assign(".ExTimings", "ecpc-Ex.timings", pos = 'CheckExEnv')
+> base::cat("name\tuser\tsystem\telapsed\n", file=base::get(".ExTimings", pos = 'CheckExEnv'))
+> base::assign(".format_ptime",
++ function(x) {
++   if(!is.na(x[4L])) x[1L] <- x[1L] + x[4L]
++   if(!is.na(x[5L])) x[2L] <- x[2L] + x[5L]
++   options(OutDec = '.')
++   format(x[1L:3L], digits = 7L)
++ },
++ pos = 'CheckExEnv')
+> 
+> ### * </HEADER>
+> library('ecpc')
+> 
+> base::assign(".oldSearch", base::search(), pos = 'CheckExEnv')
+> base::assign(".old_wd", base::getwd(), pos = 'CheckExEnv')
+> cleanEx()
+> nameEx("cv.ecpc")
+> ### * cv.ecpc
+> 
+> flush(stderr()); flush(stdout())
+> 
+> base::assign(".ptime", proc.time(), pos = "CheckExEnv")
+> ### Name: cv.ecpc
+> ### Title: Cross-validation for ecpc
+> ### Aliases: cv.ecpc
+> 
+> ### ** Examples
+> 
+> #####################
+> # Simulate toy data #
+> #####################
+> p<-300 #number of covariates
+> n<-100 #sample size training data set
+> n2<-100 #sample size test data set
+> 
+> #simulate all betas i.i.d. from beta_k~N(mean=0,sd=sqrt(0.1)):
+> muBeta<-0 #prior mean
+> varBeta<-0.1 #prior variance
+> indT1<-rep(1,p) #vector with group numbers all 1 (all simulated from same normal distribution)
+> 
+> #simulate test and training data sets:
+> Dat<-simDat(n,p,n2,muBeta,varBeta,indT1,sigma=1,model='linear') 
+Error in rmvnorm(n, rep(0, p), diag(rep(1, p))) : 
+  could not find function "rmvnorm"
+Calls: simDat
+Execution halted

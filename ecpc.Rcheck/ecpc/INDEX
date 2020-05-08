@@ -1,0 +1,18 @@
+cv.ecpc                 Cross-validation for ecpc
+ecpc                    ecpc co-data learning
+ecpc-package            Flexible Co-data Learning For High-dimensional
+                        Prediction
+hierarchicalLasso       Fit hierarchical lasso using LOG penalty
+mlestlin                Maximum marginal likelihood estimation for the
+                        linear model
+obtainHierarchy         Obtain hierarchy
+postSelect              Perform posterior selection
+prmsIGMode1             Inverse gamma parameters with mode 1
+produceFolds            Produce folds
+simDat                  Simulate data
+splitMedian             Discretise continuous data in multiple
+                        granularities
+visualiseGrouping       Visualise a grouping
+visualiseGroupingweights
+                        Visualise estimated grouping weights
+visualiseGroupweights   Visualise estimated group weights
