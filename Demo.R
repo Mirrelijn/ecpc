@@ -14,7 +14,7 @@ library(foreach) #for parallel computations
 library(doParallel) #for parallel computations
 
 #Download package from github;
-#library(devtools); install_github("Mirrelijn/ecpc",subdir = "Rpackage")
+#library(devtools); install_github("Mirrelijn/ecpc/Rpackage")
 library(ecpc)
 
 #Simulate data----

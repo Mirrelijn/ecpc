@@ -72,8 +72,8 @@ GroupingCpG <- CreatePartition(CpGann) #use the CreatePartition function from GR
 # and using hierarchical lasso shrinkage on group level to select hierarchical groups.
 #First create a list with the groups of covariates varying in size;
 # splitMedian splits continuous co-data recursively at the median to form two new groups, 
-# split="left" splits only the lower half group
-GroupingPvals<-splitMedian(values=pvalFarkas,index=1:p,minGroupSize=50,split="left")
+# split="lower" splits only the lower half group
+GroupingPvals<-splitMedian(values=pvalFarkas,index=1:p,minGroupSize=50,split="lower")
 #Then define the hierarchy by forming groups on group level
 HierarchyPvals <- obtainHierarchy(GroupingPvals) 
 

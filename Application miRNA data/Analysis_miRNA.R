@@ -111,10 +111,10 @@ codataInd <- unlist(sapply(1:length(whichFDR),function(x) rep(x,length(whichFDR[
 # and using hierarchical lasso shrinkage on group level to select hierarchical groups.
 #First create a list with the groups of covariates varying in size;
 # splitMedian splits continuous co-data recursively at the median to form two new groups, 
-# split="left" splits only the lower half group
+# split="lower" splits only the lower half group
 FDR1 <- rep(NaN,p)
 FDR1[FDRselected] <- codata2$BFDR_MNminM[codataInd]
-GroupingFDR1 <- splitMedian(values=FDR1[FDRselected],index=FDRselected,minGroupSize=20,split="left")
+GroupingFDR1 <- splitMedian(values=FDR1[FDRselected],index=FDRselected,minGroupSize=20,split="lower")
 GroupingFDR1 <- c(GroupingFDR1,list(which(!((1:p)%in%FDRselected)))) #add group with miRs which have no FDR (in this case, that means FDR>0.5)
 #Then define the hierarchy by forming groups on group level
 HierarchyFDR1 <- obtainHierarchy(GroupingFDR1) 
@@ -123,7 +123,7 @@ HierarchyFDR1 <- obtainHierarchy(GroupingFDR1)
 FDR2 <- rep(NaN,p)
 FDR2[FDRselected] <- codata2$BFDR_PNminP[codataInd]
 #First create a list with the groups of covariates varying in size
-GroupingFDR2 <- splitMedian(values=FDR2[FDRselected],index=FDRselected,minGroupSize=20,split="left")
+GroupingFDR2 <- splitMedian(values=FDR2[FDRselected],index=FDRselected,minGroupSize=20,split="lower")
 GroupingFDR2 <- c(GroupingFDR2,list(which(!((1:p)%in%FDRselected)))) #add group with miRs which have no FDR
 #Then define the hierarchy by forming groups on group level
 HierarchyFDR2 <- obtainHierarchy(GroupingFDR2) #Define groups on group level, in this case used to define the hierarchy on the groups of the second grouping
@@ -131,7 +131,7 @@ HierarchyFDR2 <- obtainHierarchy(GroupingFDR2) #Define groups on group level, in
 #Define groupings used in dense setting (and combined with posterior selection; in sparse setting)
 GroupingsAll <- c(partkeep[1:3],list(FDR1=GroupingFDR1,FDR2=GroupingFDR2)) #add two FDR groupings to the list
 groupings.grouplvl <- list(NULL,NULL,NULL,HierarchyFDR1,HierarchyFDR2) #hierarchical structure on group level
-hypershrinkage <- c(rep("ridge",3),rep("hierTree,ridge",2))
+hypershrinkage <- c(rep("ridge",3),rep("hierLasso,ridge",2))
 
 #group sparse setting:
 # combine lasso on group level for selecting groups with ridge to estimate weights of selected groups
@@ -143,7 +143,7 @@ if(0){ #set to 1 if group sparse results are preferred
   #other number of groups in sd/abun change 5 in 20 for 20 groups
   GroupingsAll <- c(GroupingAbund5,GroupingSds5,partkeep[3],list(FDR1=GroupingFDR1,FDR2=GroupingFDR2)) #add two FDR groupings to the list
   groupings.grouplvl <- list(NULL,NULL,NULL,HierarchyFDR1,HierarchyFDR2) #hierarchical structure on group level
-  hypershrinkage <- c(rep("ridge",3),rep("hierTree,ridge",2))
+  hypershrinkage <- c(rep("ridge",3),rep("hierLasso,ridge",2))
 }
 
 #Groupings for GRridge (called "partitions" in GRridge function): first three groupings and leaf groups of the hierarchical FDRs groups
@@ -432,7 +432,7 @@ if(0){
     
     #GRridge post-selection 
     penalties <- ResGRridge[[i]]$lambdamultvec[,dim(ResGRridge[[i]]$lambdamultvec)[2]]*ResGRridge[[i]]$optl
-    post2 <- postHocSelect(X=Xstd[-folds2[[i]],],Y=Y[-folds2[[i]]],
+    post2 <- postSelect(X=Xstd[-folds2[[i]],],Y=Y[-folds2[[i]]],
                            beta=ResGRridge[[i]]$betas,intrcpt=ResGRridge[[i]]$predobj$GroupRegul@unpenalized,
                            postselection="elnet+dense",maxsel=maxSel, 
                            penalties=penalties,model="logistic",
@@ -775,7 +775,7 @@ if(0){
   dfPost <- data.frame()
   dfBetaPost <- data.frame()
   for(i in 1:nfolds){
-    post2 <- postHocSelect(X=Xstd[-folds2[[i]],],Y=Y[-folds2[[i]]],
+    post2 <- postSelect(X=Xstd[-folds2[[i]],],Y=Y[-folds2[[i]]],
                            beta=Res[[i]]$beta,intrcpt=Res[[i]]$intercept,
                            postselection=postselection,maxsel=maxSel, 
                            penalties=Res[[i]]$penalties,model="logistic",
@@ -940,7 +940,7 @@ if(0){
   post2 <- list()
 
   for(i in 1:nSmpl){
-    post2[[i]] <- postHocSelect(X=Xstd[subsamples[,i],],Y=Y[subsamples[,i]],
+    post2[[i]] <- postSelect(X=Xstd[subsamples[,i],],Y=Y[subsamples[,i]],
                            beta=Res[[i]]$beta,intrcpt=Res[[i]]$intercept,
                            postselection=postselection,maxsel=maxSel2, 
                            penalties=Res[[i]]$penalties,model="logistic",
@@ -1343,7 +1343,7 @@ ls<-1
 load(paste(pathResults,"CVmiRNA_ecpcA",sep="")) #df, dfGrps, dfBeta, Res
 GroupingsAll <- c(partkeep[1:3],list(FDR1=GroupingFDR1,FDR2=GroupingFDR2)) #add two FDR groupings to the list
 groupings.grouplvl <- list(NULL,NULL,NULL,HierarchyFDR1,HierarchyFDR2) #hierarchical structure on group level
-hypershrinkage <- c(rep("ridge",3),rep("hierTree,ridge",2))
+hypershrinkage <- c(rep("ridge",3),rep("hierLasso,ridge",2))
 grpngsno <- c(unlist(sapply(1:length(GroupingsAll),function(i){rep(i,length(GroupingsAll[[i]]))})))
 
 i <- 5  #grouping number
@@ -1424,7 +1424,7 @@ library(scales)
 load(paste(pathResults,"CVmiRNA_ecpcA",sep="")) #df, dfGrps, dfBeta, Res
 GroupingsAll <- c(partkeep[1:3],list(FDR1=GroupingFDR1,FDR2=GroupingFDR2)) #add two FDR groupings to the list
 groupings.grouplvl <- list(NULL,NULL,NULL,HierarchyFDR1,HierarchyFDR2) #hierarchical structure on group level
-hypershrinkage <- c(rep("ridge",3),rep("hierTree,ridge",2))
+hypershrinkage <- c(rep("ridge",3),rep("hierLasso,ridge",2))
 names(GroupingsAll[[1]]) <- 1:10
 names(GroupingsAll[[2]]) <- 1:10
 names(GroupingsAll[[3]]) <- c("FDR<0.05","rest")
