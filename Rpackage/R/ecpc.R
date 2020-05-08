@@ -3,7 +3,7 @@
 #The method combines empirical Bayes estimation for the group hyperparameters with an extra level of shrinkage
 #to be able to handle various co-data, including overlapping groups, hierarchical groups and continuous co-data.
 
-ecpc <- function(Y,X,groupings,groupings.grouplvl=NaN,
+ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                  hypershrinkage,unpen=NULL,intrcpt=T,model,postselection="elnet+dense",maxsel=10,
                  lambda="CV",fold=10,sigmasq=NaN,w=NaN,
                  nsplits=100,weights=T,profplotRSS=F,
@@ -148,9 +148,11 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NaN,
     hypershrinkage<-rep("ridge",m)
   }
   if(any(grepl("hierLasso",hypershrinkage))){
-    #nIt<-1
-    if(missing(groupings.grouplvl)|is.nan(groupings.grouplvl)){
+    if(length(groupings.grouplvl)==0){
       stop("Grouping on group level for hierarchical groups is missing")
+    }
+    if(!is.list(groupings.grouplvl) | length(groupings.grouplvl)!=m){
+      stop("Groupings on group level should be a nested list")
     }
   }
   indGrpsGlobal <- list(1:G[1]) #global group index in case we have multiple partitions
@@ -2980,17 +2982,17 @@ cv.ecpc <- function(Y,X,type.measure="MSE",outerfolds=10,
       model <- "cox"
     }
   }else{
-    model <- ecpc.args$model
+    model <- ecpc.args$model; ecpc.args$model <- NULL
   }
   if(!is.element("postselection",names(ecpc.args))){
     postselection <- "elnet,dense"
   }else{
-    postselection <- ecpc.args$postselection
+    postselection <- ecpc.args$postselection; ecpc.args$postselection <- NULL
   }
   if(!is.element("maxsel",names(ecpc.args))){
     maxsel <- 10
   }else{
-    maxsel <- ecpc.args$maxsel
+    maxsel <- ecpc.args$maxsel; ecpc.args$maxsel <- NULL
   }
   
   n <- dim(X)[1]
@@ -3018,10 +3020,9 @@ cv.ecpc <- function(Y,X,type.measure="MSE",outerfolds=10,
                                          "CVXR","expm","Rsolnp","ecpc")) %dopar% {
          
          tic<-proc.time()[[3]]
-         Res[[i]]<-ecpc(Y[-folds2[[i]]],X[-folds2[[i]],],
-                        Y2=Y[folds2[[i]]],X2=X[folds2[[i]],],lambda=lambdas[i],
-                        postselection=postselection,maxsel = maxsel,model=model,
-                        ...)
+         Res[[i]]<-do.call(ecpc,args=c(list(Y=Y[-folds2[[i]]],X=X[-folds2[[i]],],Y2=Y[folds2[[i]]],
+                                            X2=X[folds2[[i]],],lambda=lambdas[i],postselection=postselection,
+                                            maxsel = maxsel,model=model),ecpc.args))
          Res[[i]]$time <- proc.time()[[3]]-tic
          
          if(postselection!=F){
@@ -3065,10 +3066,9 @@ cv.ecpc <- function(Y,X,type.measure="MSE",outerfolds=10,
   }else{
     for(i in 1:nfolds){
        tic<-proc.time()[[3]]
-       Res[[i]]<-ecpc(Y[-folds2[[i]]],X[-folds2[[i]],],
-                      Y2=Y[folds2[[i]]],X2=X[folds2[[i]],],lambda=lambdas[i],
-                      postselection=postselection,maxsel = maxsel,model=model,
-                      ...)
+       Res[[i]]<-do.call(ecpc,args=c(list(Y=Y[-folds2[[i]]],X=X[-folds2[[i]],],Y2=Y[folds2[[i]]],
+                                          X2=X[folds2[[i]],],lambda=lambdas[i],postselection=postselection,
+                                          maxsel = maxsel,model=model),ecpc.args))
        Res[[i]]$time <- proc.time()[[3]]-tic
        if(postselection!=F){
          df2<-data.frame("Ypred"=c(Res[[i]]$Ypred,Res[[i]]$Ypredridge,c(Res[[i]]$YpredPost)))
