@@ -3017,7 +3017,7 @@ cv.ecpc <- function(Y,X,type.measure="MSE",outerfolds=10,
     registerDoParallel(cl)
     finalMatrix <- foreach(i=1:nfolds, .combine=rbind, 
                            .packages = c("glmnet","penalized","mvtnorm","gglasso","mgcv",
-                                         "CVXR","expm","Rsolnp","ecpc")) %dopar% {
+                                         "expm","Rsolnp","ecpc")) %dopar% {
          
          tic<-proc.time()[[3]]
          Res[[i]]<-do.call(ecpc,args=c(list(Y=Y[-folds2[[i]]],X=X[-folds2[[i]],],Y2=Y[folds2[[i]]],
