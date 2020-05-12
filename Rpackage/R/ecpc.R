@@ -3016,8 +3016,8 @@ cv.ecpc <- function(Y,X,type.measure="MSE",outerfolds=10,
     cl <- makeCluster(ncores) #set up parallel cluster
     registerDoParallel(cl)
     finalMatrix <- foreach(i=1:nfolds, .combine=rbind, 
-                           .packages = c("glmnet","penalized","mvtnorm","gglasso","mgcv",
-                                         "expm","Rsolnp","ecpc")) %dopar% {
+                           .packages = c("glmnet","penalized","mvtnorm","gglasso",
+                                         "Matrix","Rsolnp","ecpc")) %dopar% {
          
          tic<-proc.time()[[3]]
          Res[[i]]<-do.call(ecpc,args=c(list(Y=Y[-folds2[[i]]],X=X[-folds2[[i]],],Y2=Y[folds2[[i]]],
