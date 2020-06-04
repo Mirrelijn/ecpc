@@ -2086,12 +2086,14 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     w = partWeightsTau[,nIt+1], #grouping weights in local variances
     penalties = lambdap, #penalty parameter on all p covariates
     hyperlambdas = lambdashat[2,nIt+1,], #hyperpenalties for all groupings
-    Ypred=YpredGR[,-1], #predictions for test set
-    MSEecpc = MSEecpc[nIt+1], #MSE on test set
     #weights = weights, #weights used in ridge hypershrinkage
     #levelsY = levelsY, #in case of logistic
     sigmahat=sigmahat #estimated sigma^2 (linear model)
   )
+  if(!is.na(Y2)){
+    output$Ypred<-YpredGR[,-1] #predictions for test set
+    output$MSEecpc <- MSEecpc[nIt+1] #MSE on test set
+  }
   
   if(mutrgt!=0){ #prior group means are estimated as well
     output$muhat <- muhat[,nIt+1] #EB estimated prior group means: mu_global*muweight
@@ -2106,8 +2108,10 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     output$betaridge <- betaridge #ordinary ridge beta
     output$interceptridge <- glmR$a0
     output$lambdaridge <- lambdaridge #ordinary ridge lambda
-    output$Ypredridge <- Ypredridge
-    output$MSEridge <- MSEridge
+    if(!is.nan(Y2)){
+      output$Ypredridge <- Ypredridge
+      output$MSEridge <- MSEridge
+    }
   }
   if(postselection!=F){ #posterior selection is performed
     output$betaPost <- postSel$betaPost
