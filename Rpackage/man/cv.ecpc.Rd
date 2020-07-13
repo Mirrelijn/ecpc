@@ -11,7 +11,7 @@ Cross-validates ecpc and returns model fit, summary statistics and cross-validat
 }
 \usage{
 cv.ecpc(Y,X,type.measure=c("MSE","AUC"),outerfolds=10,
-        lambdas=NULL,ncores=1,balance=T,...)
+        lambdas=NULL,ncores=1,balance=T,silent=F,...)
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
@@ -37,6 +37,10 @@ Observed data; (nxp)-dimensional matrix (p: number of covariates) with each row 
 }
   \item{balance}{
   (logistic, Cox) Should folds be balanced in response?
+}
+  \item{silent}{
+%%     ~~Describe \code{normalise} here~~
+Should output messages be suppressed (default FALSE)?
 }
   \item{...}{
   Additional arguments used in \code{\link{ecpc}}.

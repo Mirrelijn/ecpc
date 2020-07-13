@@ -3014,7 +3014,7 @@ simDat <- function(n,p,n2=20,muGrp,varGrp,indT,sigma=1,model='linear',flag=F){
 
 #Perform cross-validation----
 cv.ecpc <- function(Y,X,type.measure="MSE",outerfolds=10,
-                    lambdas=NULL,ncores=1,balance=T,...){
+                    lambdas=NULL,ncores=1,balance=T,silent=F,...){
   ecpc.args <- list(...)
   if(!is.element("model",names(ecpc.args))){
     if(all(is.element(Y,c(0,1))) || is.factor(Y)){
@@ -3065,7 +3065,7 @@ cv.ecpc <- function(Y,X,type.measure="MSE",outerfolds=10,
          tic<-proc.time()[[3]]
          Res[[i]]<-do.call(ecpc,args=c(list(Y=Y[-folds2[[i]]],X=X[-folds2[[i]],],Y2=Y[folds2[[i]]],
                                             X2=X[folds2[[i]],],lambda=lambdas[i],postselection=postselection,
-                                            maxsel = maxsel,model=model),ecpc.args))
+                                            maxsel = maxsel,model=model,silent=silent),ecpc.args))
          Res[[i]]$time <- proc.time()[[3]]-tic
          
          if(postselection!=F){
@@ -3111,7 +3111,7 @@ cv.ecpc <- function(Y,X,type.measure="MSE",outerfolds=10,
        tic<-proc.time()[[3]]
        Res[[i]]<-do.call(ecpc,args=c(list(Y=Y[-folds2[[i]]],X=X[-folds2[[i]],],Y2=Y[folds2[[i]]],
                                           X2=X[folds2[[i]],],lambda=lambdas[i],postselection=postselection,
-                                          maxsel = maxsel,model=model),ecpc.args))
+                                          maxsel = maxsel,model=model,silent=silent),ecpc.args))
        Res[[i]]$time <- proc.time()[[3]]-tic
        if(postselection!=F){
          df2<-data.frame("Ypred"=c(Res[[i]]$Ypred,Res[[i]]$Ypredridge,c(Res[[i]]$YpredPost)))
