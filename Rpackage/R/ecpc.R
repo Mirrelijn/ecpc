@@ -310,8 +310,8 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                  itr2 <- itr2 + 1
                } 
                if(itr2==10 & ol1$lambda>10^12){
-                 ol1$lambda <- 10^12
-                 warning("Cross-validated global penalty lambda was >10^12 and set to 10^12")
+                 ol1$lambda <- 10^6
+                 warning("Cross-validated global penalty lambda was >10^12 and set to 10^6")
                }
              }
              
@@ -2205,6 +2205,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
     maxsel2[maxsel2<2] <- 2
   }
   nonzeros <- beta!=0 #Fix beta that are already 0 
+
   lambdap<-penalties #ridge penalties for the penalised and non-zero covariates
   pen<-which(penfctr!=0) #index of penalised covariates
 
