@@ -19,7 +19,7 @@ unpen = NULL, intrcpt = TRUE, model=c("linear","logistic","cox"),
 postselection = "elnet,dense", maxsel = 10, 
 lambda = "CV", fold = 10, sigmasq = NaN, w = NaN, 
 nsplits = 100, weights = TRUE, profplotRSS = F, Y2 = NaN, X2 = NaN, 
-compare = TRUE, mu = FALSE, normalise = FALSE)
+compare = TRUE, mu = FALSE, normalise = FALSE, silent = FALSE)
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
@@ -109,6 +109,10 @@ Should group prior means be included (default FALSE)?
   \item{normalise}{
 %%     ~~Describe \code{normalise} here~~
 Should group variances be normalised to sum to 1 (default FALSE)?
+}
+  \item{silent}{
+%%     ~~Describe \code{normalise} here~~
+Should output messages be suppressed (default FALSE)?
 }
 }
 \details{

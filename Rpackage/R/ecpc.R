@@ -8,7 +8,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                  lambda="CV",fold=10,sigmasq=NaN,w=NaN,
                  nsplits=100,weights=T,profplotRSS=F,
                  Y2=NaN,X2=NaN,compare=T,
-                 mu=F,normalise=F
+                 mu=F,normalise=F,silent=F
                  #nIt=1,betaold=NaN
                  ){
   #-1. Description input --------------------------------------------------------------------------
@@ -50,6 +50,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
   # compare: -T if to grridge to be compared with glmnet, with same lambda. 
   #          -if "CV" or "ML", (possibly) different lambda used in glmnet (lambda "ML", "CV" specifies which method is used for grridge lambda)
   #          -for logistic/cox: if "MoM", CV approximation as initial value + MoM for moment iteration on whole group
+  # silent: set to T to suppress output messages
   #
   #Experimental settings:
   # mu: T/F to include/exclude group prior means (default F)
@@ -79,7 +80,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     levelsY<-cbind(c(0,1),c(0,1))
     if(lambda=="ML"){
       lambda <- "CV"
-      print("For logistic model, use CV for overall tau.")
+      if(!silent) print("For logistic model, use CV for overall tau.")
     }
     if(!all(is.element(Y,c(0,1)))){
     oldLevelsY<-levels(Y)
@@ -91,7 +92,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
       levels(Y2)<-c("0","1")
       Y2<-as.numeric(Y2)-1
     }
-    print("Y is put in 0/1 format, see levelsY in output for new names")
+    if(!silent) print("Y is put in 0/1 format, see levelsY in output for new names")
     }
   }
   if(model=='cox'){
@@ -99,7 +100,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     if(is.nan(tausq)){
       if(is.nan(lambda)) lambda <- "CV"
       if(lambda=="ML"){
-        print("For cox model, no ML approximation for overall tau available. Use CV instead.")
+        if(!silent) print("For cox model, no ML approximation for overall tau available. Use CV instead.")
         lambda <- "CV"
       }
     }
@@ -266,7 +267,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
   lambdashat[1,,]<-hyperlambdas[1]; lambdashat[2,,]<-hyperlambdas[2] #optional: fix extra hyperpenalty if given 
   
   #-3.2 Initial tau and beta ========================================================================================
-  print(paste("Estimate global tau^2 (equiv. global ridge penalty lambda)"))
+  if(!silent) print(paste("Estimate global tau^2 (equiv. global ridge penalty lambda)"))
   intrcptGLM <- intrcpt
   MoMinit <- F
   if(grepl("MoM",lambda)){
@@ -301,11 +302,11 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                }else{
                  Xunpen <- cbind(X[,penfctr==0]) #if empty vector, no unpenalised and no intercept
                }
-               ol1 <- optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold)
+               ol1 <- optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold,trace=F)
                #ol2 <- optL2(Y,penalized=X[,penfctr!=0],unpenalized=Xunpen, fold=ol1$fold ) #gives same result, but the first is much faster for large p
                itr2<-1
                while(ol1$lambda>10^12 & itr2 < 10){
-                 ol1 <- optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold)
+                 ol1 <- optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold,trace=F)
                  itr2 <- itr2 + 1
                } 
                if(itr2==10 & ol1$lambda>10^12){
@@ -373,11 +374,11 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                  Xunpen <- cbind(X[,penfctr==0]) #if empty vector, no unpenalised and no intercept
                }
                
-               ol1 <- optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold)
+               ol1 <- optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold,trace=F)
                #ol2 <- optL2(Y,penalized=X[,penfctr!=0],unpenalized=Xunpen, fold=ol1$fold ) #gives same result, but the first is much faster for large p
                itr2<-1
                while(ol1$lambda>10^12 & itr2 < 10){
-                 ol1 <- optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold)
+                 ol1 <- optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold,trace=F)
                  itr2 <- itr2 + 1
                  if(ol1$lambda>10^12){
                    ol1$lambda <- 10^2
@@ -462,7 +463,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                XF <- X[,penfctr!=0]%*% Xsvd$v
                Xunpen <- cbind(X[,penfctr==0]) #if empty vector, no unpenalised and no intercept
                
-               ol1 <- optL2(Surv(Y[,1],Y[,2]),penalized=XF, unpenalized =Xunpen,fold=fold)
+               ol1 <- optL2(Surv(Y[,1],Y[,2]),penalized=XF, unpenalized =Xunpen,fold=fold,trace=F)
                #ol2 <- optL2(Y,penalized=X[,penfctr!=0],unpenalized=Xunpen, fold=ol1$fold ) #gives same result, but the first is much faster for large p
              }
              if((!is.nan(compare) & grepl("CV",compare))| (!is.nan(compare) & compare==T)){
@@ -533,9 +534,9 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     }
     if(model%in%c("logistic","cox") && all(W==0)){
       #browser()
-        print("Overfitting: only 0 in weight matrix W")
-        print(paste("Iterating stopped after",Itr-1,"iterations",sep=" "))
-        break;
+      if(!silent) print("Overfitting: only 0 in weight matrix W")
+      if(!silent) print(paste("Iterating stopped after",Itr-1,"iterations",sep=" "))
+      break;
     }
     
     #NOTE: in glmnet not yet unpenalised covariates other than intercept
@@ -645,7 +646,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
  
     #-3.3.3 Update group parameters ###########################################################################
     if(nIt>1){
-      print(paste("Compute group penalty estimates, iteration ",Itr,"out of maximal ",nIt," iterations."))
+      if(!silent) print(paste("Compute group penalty estimates, iteration ",Itr,"out of maximal ",nIt," iterations."))
     }
     ### Function Method of Moments to compute group weights for (possibly) multiple parameters 
     MoM <- function(Partitions,hypershrinkage=NaN,groupings.grouplvl=NaN,
@@ -687,10 +688,10 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
         ExtraShrinkage2 <- temp[[1]][-1]
         if(grepl("none",hypershrinkage)){
           if(length(Partitions)==1){
-            print(paste("Grouping ",Partitions,": estimate group weights, hypershrinkage type: ",hypershrinkage,sep=""))
+            if(!silent) print(paste("Grouping ",Partitions,": estimate group weights, hypershrinkage type: ",hypershrinkage,sep=""))
           }
         }else{
-          print(paste("Grouping ",Partitions,": estimate hyperlambda for ",hypershrinkage," hypershrinkage",sep=""))
+          if(!silent) print(paste("Grouping ",Partitions,": estimate hyperlambda for ",hypershrinkage," hypershrinkage",sep=""))
         }
       }
       if(length(G)==1 && G==1){
@@ -1601,7 +1602,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
               profPlot <- plot(log10(lambdas),FRSS,xlab="hyperlambda (log10-scale)",ylab="RSS",
                                main=paste("Grouping ",Partitions,", ",hypershrinkage," hypershrinkage",sep=""))
               abline(v=log10(lambdas[minFRSS]),col="red")
-              print(paste("Estimated hyperlambda: ",lambdashat[2],sep=""))
+              if(!silent) print(paste("Estimated hyperlambda: ",lambdashat[2],sep=""))
             }    
             
             
@@ -1612,7 +1613,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
         
           #-3.3.3|1.2.4 Compute group variance estimates for optimised hyperpenalty lambda ##############
           if(length(ExtraShrinkage2)==0){
-            print(paste("Estimate group weights of grouping ",Partitions,sep=""))
+            if(!silent) print(paste("Estimate group weights of grouping ",Partitions,sep=""))
           }
           if(lambdashat[2]==0){
             tauhatold[indnot0] <- solve(A[indnot0,indnot0],Btau[indnot0])
@@ -1622,7 +1623,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
             tauhat <- pmax(0,tauhatold)
             
             if(length(ExtraShrinkage2)>0){
-              print(paste("Select groups of grouping ",Partitions,sep=""))
+              if(!silent) print(paste("Select groups of grouping ",Partitions,sep=""))
               if(all(tauhatold==0)){ #none selected
                 tauhat <- rep(0,G)
                 tauhat[indnot0] <- 1
@@ -1806,7 +1807,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
             }
             if(any(is.nan(tauhat))){warning("NaN in group variance")}
           }else{ #compute partition weights/co-data weights
-            print("Estimate grouping weights")
+            if(!silent) print("Estimate grouping weights")
             weightsPart <- sqrt(G[Partitions])
             weightMatrixTau <- matrix(rep(0,sum(G)*length(G)),sum(G),length(G))
             for(i in 1:length(G)){
@@ -1971,7 +1972,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     #lambdap2<-sigmahat/as.vector(c(partWeightsTauG*weightsTau*tautrgt)%*%Zt)
   
     #-3.3.5 Update beta using glmnet #######################################################################
-    print("Estimate regression coefficients")
+    if(!silent) print("Estimate regression coefficients")
     if(all(tauhat[,Itr+1]==0)){
       beta <- muhatp
       if(intrcpt){
@@ -2050,7 +2051,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     Itr <- Itr+1
 
     if(length(ind0)==sum(G)){
-      print(paste("All prior group variances estimated to be 0, iterating stopped after",Itr,"iteration(s)"))
+      if(!silent) print(paste("All prior group variances estimated to be 0, iterating stopped after",Itr,"iteration(s)"))
       break;
     }
   }
@@ -2059,7 +2060,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
   #postselection: indicates which of the two methods possible is used to do post-hoc variable selection
   #maxsel: maximum number of variables selected
   if(postselection!=F){
-    print("Sparsify model with posterior selection")
+    if(!silent) print("Sparsify model with posterior selection")
     postSel <- postSelect(X=X,Y=Y,beta=beta,intrcpt=glmGR$a0,penfctr=penfctr, 
                              postselection=postselection,maxsel=maxsel, 
                              penalties=lambdap,model=model,tauglobal=tautrgt,
@@ -2200,7 +2201,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
   maxsel2 <- pmin(maxsel, p)
   if(any(maxsel2<2)){
     warning("Number of variables to be selected should be at least 2 (out of convenience)")
-    print("Maxsel values smaller than 2 are set to 2")
+    if(!silent) print("Maxsel values smaller than 2 are set to 2")
     maxsel2[maxsel2<2] <- 2
   }
   nonzeros <- beta!=0 #Fix beta that are already 0 
@@ -2549,7 +2550,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
     #3. (sparse): Refit using ordinary ridge with newly cross-validated lambda 
     if(grepl("joint",postselection)){
       #joint credible set approach
-      print("Bondell&Reich joint credible set used to select covariates")
+      if(!silent) print("Bondell&Reich joint credible set used to select covariates")
       
       ind <- which(penfctr!=0 & penalties!=Inf) #index of beta that are penalised and not already set to 0
       #compute prediction weight matrix W
@@ -2585,7 +2586,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
         fit<-coef.glmnet(glmPost,s=lambda,exact=T,x=Xstar,y=Ystar)
       
         if(grepl("same",postselection)){
-          if(x==maxsel2[1]) print("Selected covariates are not refit, unpenalised covariates are kept the same")
+          if(x==maxsel2[1]) if(!silent) print("Selected covariates are not refit, unpenalised covariates are kept the same")
           betaPost <- beta
           betaPost[ind] <- fit*beta[ind]^2
           whichPost <- which(betaPost!=0 & penfctr!=0) #index of selected penalised covariates 
@@ -2616,16 +2617,16 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           }
           return(output)
           }else if(grepl("sparse",postselection)){
-            print("Selected covariates are refit with previously estimated weighted ridge prior")
+            if(!silent) print("Selected covariates are refit with previously estimated weighted ridge prior")
             
           }else{# if(grepl("dense",postselection)){
-            print("Selected covariates are refit with an ordinary ridge prior using newly cross-validated penalty")
+            if(!silent) print("Selected covariates are refit with an ordinary ridge prior using newly cross-validated penalty")
             
           }
         })
     }else{ #if(grepl("marginal")){
       #marginal credible set approach
-      print("Bondell&Reich marginal credible set used to select covariates")
+      if(!silent) print("Bondell&Reich marginal credible set used to select covariates")
       
       ind <- which(penfctr!=0 & beta!=0) #index of betas that are penalised and not already set to 0
       indpen <- which((beta[penfctr!=0])!=0) #index in 1:length(pen) of betas that are penalise and not yet set to 0
@@ -2661,7 +2662,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
 
         
         if(grepl("dense",postselection)){
-          if(x==maxsel2[1]) print("Selected covariates are refit with previously estimated weighted ridge prior")
+          if(x==maxsel2[1]) if(!silent) print("Selected covariates are refit with previously estimated weighted ridge prior")
           
           lambdaoverall <- sigmahat/tautrgt
           lam2 <- sigmahat/tautrgt/n*sd_y
@@ -2975,7 +2976,7 @@ simDat <- function(n,p,n2=20,muGrp,varGrp,indT,sigma=1,model='linear',flag=F){
     Y2 <- X2ctd %*% beta + rnorm(n2,0,sd=sigma) #Y~N(X*beta,sigma^2)
     
     if(flag){
-      print(paste("Simulated data for",model,"regression"))
+      if(!silent) print(paste("Simulated data for",model,"regression"))
       #plot data
       plot(Y)
       points(Xctd %*% beta, col='red') #Y without the added noise
@@ -2991,7 +2992,7 @@ simDat <- function(n,p,n2=20,muGrp,varGrp,indT,sigma=1,model='linear',flag=F){
     Y2 <- rbinom(n2,1,expX2b/(1+expX2b))
     
     if(flag){
-      print(paste("Simulated data for",model,"regression"))
+      if(!silent) print(paste("Simulated data for",model,"regression"))
       #plot data
       plot(Y)
       points(expXb/(1+expXb), col='red') #Y without the added noise
@@ -3094,7 +3095,7 @@ cv.ecpc <- function(Y,X,type.measure="MSE",outerfolds=10,
          df3$Method <- "ecpc"
          df3$Fold <- i
          
-         print(paste(Sys.time(),"fold",i,"of",nfolds,"done"))
+         if(!silent) print(paste(Sys.time(),"fold",i,"of",nfolds,"done"))
          
          list("Res"=Res,"df"=df2,"dfGrps"=df3)
        }
@@ -3141,7 +3142,7 @@ cv.ecpc <- function(Y,X,type.measure="MSE",outerfolds=10,
        df3$Fold <- i
        dfGrps<-rbind(dfGrps,df3)
        
-       print(paste(Sys.time(),"fold",i,"of",nfolds,"done"))
+       if(!silent) print(paste(Sys.time(),"fold",i,"of",nfolds,"done"))
     }
   }
 
@@ -3151,8 +3152,8 @@ cv.ecpc <- function(Y,X,type.measure="MSE",outerfolds=10,
   #data frame with performance measure
   if(is.factor(df$Truth)){
     warning("Response Y given as factor, transformed to numeric to compute AUC")
-    print(levels(df$Truth)[1],"transformed to",0)
-    print(levels(df$Truth)[2],"transformed to",1)
+    if(!silent) print(levels(df$Truth)[1],"transformed to",0)
+    if(!silent) print(levels(df$Truth)[2],"transformed to",1)
     df$Truth <- as.numeric(df$Truth)-1
   }
   if(type.measure=="MSE"){
