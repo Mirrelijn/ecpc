@@ -57,11 +57,13 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
   # nIt: number of times ecpc is iterated (default 1)
   # betaold: if beta known for similar, previous study, can be used as weights for group mean beta_old*mu (default unknown)
 
-  nIt=1;betaold=NaN
+  nIt=1;
+  betaold=NaN
   #-2. Set-up variables ---------------------------------------------------------------------------
   n <- dim(X)[1] #number of samples
-  p <- dim(X)[2] #number of covariates
-  n2 <- length(Y2) #number of samples in independent data set Y2 if given
+  p <- dim(X)[2] #number of covariates 
+  if(!missing(X2)) n2<-dim(X2)[1] #number of samples in independent data set x2 if given
+  
   if(missing(model)){
     if(all(is.element(Y,c(0,1))) || is.factor(Y)){
       model <- "logistic" 
@@ -244,9 +246,9 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
   
   
   #-3.1.3 Variables used in iterations #######################################################################
-  if(!missing(Y2)){
-    if(model=="cox") YpredGR <- array(NaN,c(length(Y2[,1]),nIt+1))
-    else YpredGR <- array(NaN,c(length(Y2),nIt+1))
+  if(!missing(X2)){
+    if(model=="cox") YpredGR <- array(NaN,c(n2,nIt+1))
+    else YpredGR <- array(NaN,c(n2,nIt+1))
     MSEecpc<-rep(NaN,nIt+1)
   } else { 
       YpredGR<-NaN
@@ -1814,12 +1816,18 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
               weightsTau <- rep(1/length(Partitions),length(Partitions)) #partition/co-data weights
               tauhat<-weightMatrixTau%*%weightsTau*tautrgt #group weights multiplied with partition/co-data weights and overall tau
             }else{
-              Atilde <- A[indnot0,indnot0]%*%weightMatrixTau[indnot0,] 
+              if(any(partWeightsTau[,Itr]==0)){
+                set0 <- unlist(indGrpsGlobal[which(partWeightsTau[,Itr]==0)])
+                ind0 <- union(ind0,set0)
+                indnot0 <- setdiff(indnot0,set0)
+              }
+              Atilde <- A[indnot0,indnot0]%*%weightMatrixTau[indnot0,partWeightsTau[,Itr]!=0] 
               
               #Three options to solve for partition weights (use only one):
               #Solve for tau and truncate negative values to 0
               if(1){
-                tauhatold <- solve(t(Atilde)%*%Atilde,t(Atilde)%*%c(Btau[indnot0]))
+                tauhatold<-rep(0,m)
+                tauhatold[partWeightsTau[,Itr]!=0] <- solve(t(Atilde)%*%Atilde,t(Atilde)%*%c(Btau[indnot0]))
                 weightsTau <- pmax(0,tauhatold)
                 #temp<-optim(tauhat,function(x){sum((Atilde%*%x-c(Btau[indnot0]))^2)},lower=rep(0,length(tauhat)),method="L-BFGS-B")
                 #tauhat<-temp$par 
@@ -1877,9 +1885,20 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     #For each partition/dataset, use MoM to get group weights
     #NOTE: possible to use different penalty functions
     MoMGroupRes <- lapply(1:m,function(i){
-      MoM(Partitions=i,hypershrinkage=hypershrinkage[i],groupings.grouplvl=groupings.grouplvl[[i]])
+      if(partWeightsTau[i,Itr]!=0){
+        MoM(Partitions=i,hypershrinkage=hypershrinkage[i],groupings.grouplvl=groupings.grouplvl[[i]])
+      }else{
+        return(list(muhat = muhat[indGrpsGlobal[[i]],Itr],
+                    tauhatold = tauhatold[indGrpsGlobal[[i]],Itr],
+                    tauhat = tauhat[indGrpsGlobal[[i]],Itr],
+                    weightsMu = weightsMu[indGrpsGlobal[[i]],Itr],
+                    weightsTau = weightsTau[indGrpsGlobal[[i]],Itr],
+                    lambdashat = lambdashat[i, Itr,],
+                    hypershrinkage=hypershrinkage[i]))
+      }
     }
     )
+
     #global update group parameters
     muhat[,Itr+1]<-unlist(lapply(MoMGroupRes,function(prt){prt$muhat}))
     tauhatold[,Itr+1] <- unlist(lapply(MoMGroupRes,function(prt){prt$tauhatold}))
@@ -1888,6 +1907,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     weightsTau[,Itr+1] <- unlist(lapply(MoMGroupRes,function(prt){prt$weightsTau}))
     lambdashat[, Itr+1,] <- array(unlist(lapply(MoMGroupRes,function(prt){prt$lambdashat})),c(2,1,m))
 
+    
     #For fixed group weights, use MoM to get partition/co-data weights
     if(m>1){
       if(!is.nan(w)){
@@ -1901,7 +1921,15 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
         }
       }else{
         if(!all(round(weightsTau[,Itr+1],10)==1)){
-          MoMPartRes <- MoM(Partitions=1:m,hypershrinkage="none",fixWeightsMu=weightsMu[,Itr+1],fixWeightsTau=weightsTau[,Itr+1])
+          #if(!any(partWeightsTau[,Itr]==0)){
+            MoMPartRes <- MoM(Partitions=1:m,hypershrinkage="none",fixWeightsMu=weightsMu[,Itr+1],fixWeightsTau=weightsTau[,Itr+1])
+          # }else{
+          #   partNot0 <- which(partWeightsTau[,Itr]!=0)
+          #   MoMPartRes <- MoM(Partitions=partNot0,hypershrinkage="none",
+          #                     fixWeightsMu=weightsMu[unlist(indGrpsGlobal[partNot0]),Itr+1],
+          #                     fixWeightsTau=weightsTau[unlist(indGrpsGlobal[partNot0]),Itr+1])
+          # }
+          
         }
         if(is.nan(mu)){
           partWeightsMu[,Itr+1] <- MoMPartRes$weightsMu
@@ -1992,7 +2020,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     }
     
     #-3.3.6 Update predictions on independent data (if given) ################################################
-    if(!all(is.nan(X2))){
+    if(!missing(X2)){
       #Ypredridge <- predict(glmGR,newx=X2)
       if(model=="linear"){
         X2c <- cbind(X2,rep(1,n2))
@@ -2053,7 +2081,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     }
     betaridge <- as.vector(glmR$beta)
     
-    if(!all(is.nan(X2))){
+    if(!missing(X2)){
       #Ypredridge <- predict(glmR,newx=X2)
       #browser()
       
@@ -2090,9 +2118,19 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     #levelsY = levelsY, #in case of logistic
     sigmahat=sigmahat #estimated sigma^2 (linear model)
   )
-  if(!is.na(Y2)){
+  if(nIt>1){
+    output$gamma <- weightsTau[,-1]
+    output$gammatilde <- tauhatold[,-1]
+    output$w <- partWeightsTau[,-1]
+    output$hyperlambdas <- lambdashat[2,-1,]
+  }
+  if(!missing(X2)){
     output$Ypred<-YpredGR[,-1] #predictions for test set
     output$MSEecpc <- MSEecpc[nIt+1] #MSE on test set
+    if(nIt>1){
+      output$Ypred<-YpredGR[,-1] #predictions for test set
+      output$MSEecpc <- MSEecpc[-1] #MSE on test set
+    }
   }
   
   if(mutrgt!=0){ #prior group means are estimated as well
@@ -2108,7 +2146,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     output$betaridge <- betaridge #ordinary ridge beta
     output$interceptridge <- glmR$a0
     output$lambdaridge <- lambdaridge #ordinary ridge lambda
-    if(!is.nan(Y2)){
+    if(!all(is.nan(X2))){
       output$Ypredridge <- Ypredridge
       output$MSEridge <- MSEridge
     }
@@ -2116,7 +2154,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
   if(postselection!=F){ #posterior selection is performed
     output$betaPost <- postSel$betaPost
     output$interceptPost <- postSel$a0
-    if(!all(is.nan(X2))){
+    if(!missing(X2)){
       output$MSEPost <- postSel$MSEPost #MSE on independent data set (if given)
       output$YpredPost <- postSel$YpredPost #predictions for independent data set (if given)
     }
