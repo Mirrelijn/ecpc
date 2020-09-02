@@ -1164,7 +1164,6 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
               })
             ),c(sum(G),sum(G)),byrow=T) #reshape to matrix of size sum(G)xsum(G)
             
-            browser()
             #if(Itr==2) browser()
             #-3.3.3|1.2.2 For each split, compute linear system #########################################
             gammatrgtG <- rep(1,sum(G))
