@@ -7,6 +7,7 @@ library(igraph) #for plots
 library(ggraph) #for plots
 library(dplyr) #for data handling
 library(gglasso) #for hierarchical groups
+library(multiridge) #for multi-omics (multiple datatypes)
 library(Matrix)
 library(glmnet)
 library(penalized)
@@ -18,7 +19,7 @@ library(doParallel) #for parallel computations
 library(ecpc)
 
 #Simulate data----
-p<-300 #number of covariates
+p<-600 #number of covariates
 n<-100 #sample size training data set
 n2<-100 #sample size test data set
 #simulate betas i.i.d. from beta_k~N(mean=0,sd=sqrt(0.1))
@@ -68,6 +69,25 @@ fit$MSEPost #MSE of the parsimonious models on the test set
 fit$w #grouping weights
 fit$gamma #group weights are concatenated for the groupings
 fit$tauglobal #global prior variance
+
+#Fit ecpc for multi-omics (use multiridge for multiple global lambda)----
+#with multi, informative groups
+fit2 <- ecpc(Y=Dat$Y,X=Dat$Xctd[,rankBeta],groupings=list(list(1:100,101:200,201:300,301:400,401:500,501:600)),
+             groupings.grouplvl=list(NULL),
+             hypershrinkage=c("none"),
+             model="linear",maxsel=c(5,10,15,20),
+             Y2=Dat$Y2,X2=Dat$X2ctd[,rankBeta],
+             datablocks = list(1:floor(p/2),(floor(p/2)+1):p))
+
+#without multi, 6 informative groups
+fit2a <- ecpc(Y=Dat$Y,X=Dat$Xctd[,rankBeta],groupings=list(list(1:100,101:200,201:300,301:400,401:500,501:600)),
+              groupings.grouplvl=list(NULL),
+              hypershrinkage=c("none"),
+              model="linear",maxsel=c(5,10,15,20),
+              Y2=Dat$Y2,X2=Dat$X2ctd[,rankBeta])
+
+c(fit2$MSEecpc,fit2$MSEridge) #multiridge + ecpc (i.e. multiple global tau), multiridge
+c(fit2a$MSEecpc,fit2a$MSEridge) #ecpc (i.e. one global tau), ordinary ridge
 
 #Cross-validate ecpc----
 #Takes ~'outerfolds' minutes
