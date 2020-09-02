@@ -1,5 +1,6 @@
 exportPattern("^[[:alpha:]]+")
 import(stats)
+import(mvtnorm)
 import(graphics)
 import(Matrix)
 import(glmnet)

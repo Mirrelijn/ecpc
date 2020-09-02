@@ -19,7 +19,8 @@ unpen = NULL, intrcpt = TRUE, model=c("linear","logistic","cox"),
 postselection = "elnet,dense", maxsel = 10, 
 lambda = "CV", fold = 10, sigmasq = NaN, w = NaN, 
 nsplits = 100, weights = TRUE, profplotRSS = F, Y2 = NaN, X2 = NaN, 
-compare = TRUE, mu = FALSE, normalise = FALSE, silent = FALSE)
+compare = TRUE, mu = FALSE, normalise = FALSE, silent = FALSE,
+datablocks = NULL)
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
@@ -114,6 +115,10 @@ Should group variances be normalised to sum to 1 (default FALSE)?
 %%     ~~Describe \code{normalise} here~~
 Should output messages be suppressed (default FALSE)?
 }
+  \item{datablocks}{
+%%     ~~Describe \code{normalise} here~~
+(optional) for multiple data types, the corresponding blocks of data may be given in datablocks; a list of B vectors of the indices of covariates in `X' that belong to each of the B data blocks. Unpenalised covariates should not be given as seperate block, but can be omitted or included in blocks with penalised covariates. Each datatype obtains a datatype-specific `tauglobal' as in multiridge.
+}
 }
 \details{
 %%  ~~ If necessary, more details than the description above ~~
@@ -127,7 +132,7 @@ Should output messages be suppressed (default FALSE)?
 A list with the following elements:
   \item{beta}{Estimated regression coefficients; p-dimensional vector.}
   \item{intercept}{If included, the estimated intercept; scalar.}
-  \item{tauglobal}{Estimated global prior variance; scalar.}
+  \item{tauglobal}{Estimated global prior variance; scalar (or vector with datatype-specific global prior variances when multiple `datablocks' are given).)}
   \item{gammatilde}{Estimated group weights before truncating negative weights to 0; vector of dimension the total number of groups.}
   \item{gamma}{Final estimated group weights; vector of dimension the total number of groups.}
   \item{w}{Estimated groupings weights; m-dimensional vector.}
@@ -136,12 +141,12 @@ A list with the following elements:
   \item{Ypred}{If independent test set 'X2' is given, predictions for the test set.}
   \item{MSEecpc}{If independent test set 'X2', 'Y2' is given, mean squared error of the predictions.}
   \item{sigmahat}{(linear model) Estimated sigma^2.}
-If 'compare'=TRUE, ordinary ridge estimates and predictions are given;
-  \item{betaridge}{Estimated regression coefficients for ordinary ridge penalty.}
-  \item{interceptridge}{Estimated intercept for ordinary ridge penalty.}
-  \item{lambdaridge}{Estimated ridge penalty.}
-  \item{Ypredridge}{If independent test set 'X2' is given, ordinary ridge predictions for the test set.}
-  \item{MSEridge}{If independent test set 'X2', 'Y2' is given, mean squared error of the ordinary ridge predictions.}
+If 'compare'=TRUE, ordinary ridge estimates and predictions are given. If in addition multiple `datablocks' are given, the estimates and predictions for multiridge penalty are given;
+  \item{betaridge}{Estimated regression coefficients for ordinary ridge (or multiridge) penalty.}
+  \item{interceptridge}{Estimated intercept for ordinary ridge (or multiridge) penalty.}
+  \item{lambdaridge}{Estimated (multi)ridge penalty.}
+  \item{Ypredridge}{If independent test set 'X2' is given, ordinary ridge (or multiridge) predictions for the test set.}
+  \item{MSEridge}{If independent test set 'X2', 'Y2' is given, mean squared error of the ordinary ridge (or multiridge) predictions.}
 If posterior selection is performed;
   \item{betaPost}{Estimated regression coefficients for parsimonious models. If 'maxsel' is a vector, 'betaPost' is a matrix with each column the vector estimate corresponding to the maximum number of selected covariates given in 'maxsel'.}
   \item{interceptPost}{Estimated intercept coefficient for parsimonious models.}
@@ -187,7 +192,7 @@ str(Dat) #Dat contains centered observed data, response data and regression coef
 #Grouping 1: G random groups
 G <- 5 #number of groups
 #sample random categorical co-data:
-categoricalRandom <- sample(1:G,p,replace=T) 
+categoricalRandom <- sample(1:G,p,replace=TRUE) 
 #make grouping, i.e. list with G groups:
 groupingRandom <- lapply(1:G,function(g){which(categoricalRandom==g)}) 
 
@@ -223,5 +228,20 @@ summary(fit$betaPost) #estimated regression coefficients after posterior selecti
 
 c(fit$MSEecpc,fit$MSEridge) #mean squared error on test set for ecpc and ordinary ridge
 fit$MSEPost #MSE on the test set of ecpc after posterior selection
+
+###################################
+# Fit ecpc for multiple datatypes #
+###################################
+# #library(multiridge)
+# 
+# rankBeta<-order(abs(Dat$beta)) #betas ranked in order of magnitude
+# 
+# #with multiple datatypes (given in datablocks) and informative groups
+# fit2 <- ecpc(Y=Dat$Y,X=Dat$Xctd[,rankBeta],groupings=list(list(1:75,76:150,151:225,226:300)),
+#              groupings.grouplvl=list(NULL),
+#              hypershrinkage=c("none"),
+#              model="linear",maxsel=c(5,10,15,20),
+#              Y2=Dat$Y2,X2=Dat$X2ctd[,rankBeta],
+#              datablocks = list(1:floor(p/2),(floor(p/2)+1):p))
 
 }
