@@ -306,9 +306,16 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     
     #Find joint lambdas: TD: sigma estimate in linear?
     leftout <- CVfolds(Y=Y,kfold=fold,nrepeat=3,fixedfolds = F) #Create (repeated) CV-splits of the data
-    jointlambdas <- optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
-                                   X1=X[,(1:p)%in%unpen],intercept=intrcpt,
-                                   score=ifelse(model == "linear", "mse", "loglik"),model=model)
+    if(sum((1:p)%in%unpen)>0){
+      jointlambdas <- optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
+                                     X1=X[,(1:p)%in%unpen],intercept=intrcpt,
+                                     score=ifelse(model == "linear", "mse", "loglik"),model=model)
+    }else{
+      jointlambdas <- optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
+                                     intercept=intrcpt,
+                                     score=ifelse(model == "linear", "mse", "loglik"),model=model)
+    }
+    
     lambda <- jointlambdas$optpen
     lambdap <- rep(0,p)
     lambdap[!((1:p)%in%unpen)] <- lambda[datablockNo[!((1:p)%in%unpen)]]
@@ -350,7 +357,11 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     
     #Compute betas
     XXT <- SigmaFromBlocks(XXbl,penalties=lambda) #create nxn Sigma matrix = sum_b [lambda_b)^{-1} X_b %*% t(X_b)]
-    fit <- IWLSridge(XXT,Y=Y, model=model,intercept=intrcpt,X1=X[,(1:p)%in%unpen]) #Fit. fit$etas contains the n linear predictors
+    if(sum((1:p)%in%unpen)>0){
+      fit <- IWLSridge(XXT,Y=Y, model=model,intercept=intrcpt,X1=X[,(1:p)%in%unpen]) #Fit. fit$etas contains the n linear predictors
+    }else{
+      fit <- IWLSridge(XXT,Y=Y, model=model,intercept=intrcpt) #Fit. fit$etas contains the n linear predictors
+    }
     betas <- betasout(fit, Xblocks=Xbl, penalties=lambda) #Find betas.
     intrcptinit <- c(betas[[1]][1]) #intercept
     betasinit <- rep(0,p) 

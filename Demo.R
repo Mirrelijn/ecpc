@@ -77,7 +77,7 @@ fit2 <- ecpc(Y=Dat$Y,X=Dat$Xctd[,rankBeta],groupings=list(list(1:100,101:200,201
              hypershrinkage=c("none"),
              model="linear",maxsel=c(5,10,15,20),
              Y2=Dat$Y2,X2=Dat$X2ctd[,rankBeta],
-             datablocks = list(1:floor(p/2),(floor(p/2)+1):p))
+             datablocks = list(1:floor(p/2),(floor(p/2)+1):p),intrcpt = F)
 
 #without multi, 6 informative groups
 fit2a <- ecpc(Y=Dat$Y,X=Dat$Xctd[,rankBeta],groupings=list(list(1:100,101:200,201:300,301:400,401:500,501:600)),
