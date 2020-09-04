@@ -155,6 +155,8 @@ If posterior selection is performed;
 }
 \references{
 %% ~put references to the literature/web site here ~
+Van Nee, Mirrelijn M., Lodewyk FA Wessels, and Mark A. van de Wiel. "Flexible co-data learning for high-dimensional prediction." arXiv preprint arXiv:2005.04010 (2020).
+van de Wiel, Mark A., Mirrelijn M. van Nee, and Armin Rauschenberger. "Fast cross-validation for multi-penalty ridge regression." arXiv preprint arXiv:2005.09301 (2020).
 }
 \author{
 %%  ~~who you are~~
