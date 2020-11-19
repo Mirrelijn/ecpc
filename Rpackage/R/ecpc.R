@@ -2101,6 +2101,9 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
       beta <- as.vector(glmGR$beta) 
       beta[pen] <- c(1/sqrt(lambdap[pen]/lambdaoverall)) * beta[pen] + muhatp[pen]
       
+      # beta[pen] <- as.vector(glmGR$beta)[pen] + muhatp
+    }
+    
     #-3.3.6 Update predictions on independent data (if given) ################################################
     if(!missing(X2)){
       #Ypredridge <- predict(glmGR,newx=X2)
