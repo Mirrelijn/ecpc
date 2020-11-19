@@ -686,6 +686,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
       #V2<-apply(L2,1,function(x){sum(x^2)})
       V<-rep(NaN,p+intrcpt)
       V[pen]<-V2 #variance beta ridge estimator
+      zeroV <- which(V==0)
       
       # #should be same as:
       # XtXD <- t(Xc)%*%Xc+Deltac
@@ -716,8 +717,9 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
       mukhat1<- muinitp[pen] + L[pen,]%*%(R[,pen]%*%(mutrgt-muinitp[pen]))
 
       #update tau overall
-      Btau1 <- sum(pmax((betasinit[pen]^2-mukhat1[pen]^2)/V[pen]-1,0)) / length(pen)
-      A1<-sum((t(L[pen,]/c(V[pen]))%*%L[pen,])*(R[,pen]%*%t(R[,pen])))/length(pen)
+      Btau1 <- sum(pmax((betasinit[pen]^2-mukhat1[pen]^2)/V[pen]-1,0),na.rm=T) / length(pen)
+      pen2 <- setdiff(pen,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
+      A1<-sum((t(L[pen2,]/c(V[pen2]))%*%L[pen2,])*(R[,pen2]%*%t(R[,pen2])),na.rm=T)/length(pen)
       tauglobal<-Btau1/A1
       
       lambda <- 1/tauglobal
@@ -1156,7 +1158,9 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                   if(j%in%ind0) return(NaN)
                   #compute row with gamma_{xy}
                   x<-groupings[[i]][[j]]
-                  sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1))/Kg[[i]][j]
+                  x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
+                  sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%
+                        (muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=T)/Kg[[i]][j]
                   #sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1)/Kg[[i]][j]
                 })
               })
@@ -1167,9 +1171,11 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                   if(j%in%ind0) return(rep(NaN,sum(G)))
                   #compute row with gamma_{xy}
                   x<-groupings[[i]][[j]]
+                  x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
                   #compute row with gamma_{xy}
                   unlist(sapply(Partitions,function(prt){sapply(groupings[[prt]],function(y){
-                    sum(t(c(1/V[x])*L[x,])%*%L[x,]*(R[,y]%*%(t(R[,y])/c(Ik[[prt]][y])*c(tauglobal[datablockNo[y]]))))/Kg[[i]][j]
+                    y<-setdiff(y,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
+                    sum(t(c(1/V[x])*L[x,])%*%L[x,]*(R[,y]%*%(t(R[,y])/c(Ik[[prt]][y])*c(tauglobal[datablockNo[y]]))),na.rm=T)/Kg[[i]][j]
                   })}))
                 }, simplify="array")
               })
@@ -1191,8 +1197,9 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                     if(j%in%ind0) return(NaN)
                     #compute row with gamma_{xy}
                     x<-INDin[[i]][[split]][[j]]
-                    sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1))/Kg[[i]][j]
-                    #sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1)/Kg[[i]][j]
+                    x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
+                    sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=T)/Kg[[i]][j]
+                    #sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1))/Kg[[i]][j]
                   })
                 })
               )
@@ -1222,9 +1229,11 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                     if(j%in%ind0) return(rep(NaN,sum(G)))
                     #compute row with gamma_{xy}
                     x<-INDin[[i]][[split]][[j]]
+                    x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
                     #compute row with gamma_{xy}
                     unlist(sapply(Partitions,function(prt){sapply(groupings[[prt]],function(y){
-                      sum(t(c(1/V[x])*L[x,])%*%L[x,]*(R[,y]%*%(t(R[,y])/c(Ik[[prt]][y])*c(tauglobal[datablockNo[y]]))))/Kg[[i]][j]
+                      y<-setdiff(y,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
+                      sum(t(c(1/V[x])*L[x,])%*%L[x,]*(R[,y]%*%(t(R[,y])/c(Ik[[prt]][y])*c(tauglobal[datablockNo[y]]))),na.rm=T)/Kg[[i]][j]
                     })}))
                   }, simplify="array")
                 })
@@ -1241,7 +1250,8 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                   if(j%in%ind0) return(NaN)
                   #compute row with gamma_{xy}
                   x<-INDout[[i]][[split]][[j]]
-                  sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1))/Kg[[i]][j]
+                  x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
+                  sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=T)/Kg[[i]][j]
                   #sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1)/Kg[[i]][j]
                   #sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)-V[x]))/Kg[[i]][j]
                 })
@@ -1847,7 +1857,8 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
               sapply(1:length(Kg[[i]]),function(j){ #for each group
                 #compute row with gamma_{xy}
                 x<-groupings[[i]][[j]]
-                sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1))/Kg[[i]][j]
+                x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
+                sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=T)/Kg[[i]][j]
                 #sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1)/Kg[[i]][j]
               })
             })
@@ -1857,14 +1868,16 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
               sapply(1:length(Kg[[i]]),function(j){ #for each group
                 #compute row with gamma_{xy}
                 x<-groupings[[i]][[j]]
+                x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
                 #compute row with gamma_{xy}
                 unlist(sapply(Partitions,function(prt){sapply(groupings[[prt]],function(y){
-                  sum(t(c(1/V[x])*L[x,])%*%L[x,]*(R[,y]%*%(t(R[,y])/c(Ik[[prt]][y])*c(tauglobal[datablockNo[y]]))))/Kg[[i]][j]
+                  y<-setdiff(y,zeroV)
+                  sum(t(c(1/V[x])*L[x,])%*%L[x,]*(R[,y]%*%(t(R[,y])/c(Ik[[prt]][y])*c(tauglobal[datablockNo[y]]))),na.rm=T)/Kg[[i]][j]
                 })}))
               }, simplify="array")
             })
           ),c(sum(G),sum(G)),byrow=T) #reshape to matrix of size sum(G)xsum(G)
-
+          
           if(any(is.nan(fixWeightsTau))){
             if(grepl("positive",hypershrinkage)){
               penMSE <- function(gamma,b,A,lam) return(sum((b-A%*%gamma)^2)) 
@@ -2087,9 +2100,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
       }
       beta <- as.vector(glmGR$beta) 
       beta[pen] <- c(1/sqrt(lambdap[pen]/lambdaoverall)) * beta[pen] + muhatp[pen]
-      # beta[pen] <- as.vector(glmGR$beta)[pen] + muhatp
-    }
-    
+      
     #-3.3.6 Update predictions on independent data (if given) ################################################
     if(!missing(X2)){
       #Ypredridge <- predict(glmGR,newx=X2)
