@@ -555,7 +555,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
              glmGRtrgt <- glmnet(X,Y,alpha=0,
                                  lambda = lambda/n*sd_y,family=fml,
                                  offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], intercept = intrcpt, standardize = F,
-                                 penalty.factor=penfctr,thresh=10^-20)
+                                 penalty.factor=penfctr,thresh=10^-10)
              betasinit <- as.vector(glmGRtrgt$beta)
              betasinit[!((1:p)%in%unpen)] <- betasinit[!((1:p)%in%unpen)] + muinitp[!((1:p)%in%unpen)]
              intrcptinit <- glmGRtrgt$a0
