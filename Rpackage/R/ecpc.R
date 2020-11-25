@@ -99,12 +99,10 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
   }
   if(model=='cox'){
     intrcpt <- F
-    if(is.nan(tausq)){
-      if(is.nan(lambda)) lambda <- "CV"
-      if(lambda=="ML"){
-        if(!silent) print("For cox model, no ML approximation for overall tau available. Use CV instead.")
-        lambda <- "CV"
-      }
+    if(is.nan(lambda)) lambda <- "CV"
+    if(lambda=="ML"){
+      if(!silent) print("For cox model, no ML approximation for overall tau available. Use CV instead.")
+      lambda <- "CV"
     }
   }
   switch(model,
