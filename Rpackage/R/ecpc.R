@@ -9,7 +9,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                  nsplits=100,weights=T,profplotRSS=F,
                  Y2=NaN,X2=NaN,compare=T,
                  mu=F,normalise=F,silent=F,
-                 datablocks=NULL
+                 datablocks=NULL#,standardise_Y=F
                  #nIt=1,betaold=NaN
                  ){
   #-1. Description input --------------------------------------------------------------------------
@@ -109,14 +109,21 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
          'linear'={
            fml <- 'gaussian'
            sd_y <- sqrt(var(Y)*(n-1)/n)[1]
+           # if(standardise_Y){
+           #   Y <- Y/sd_y
+           #   sd_y_former <- sd_y
+           #   sd_y <- 1
+           # }
          },
          'logistic'={
            fml <- 'binomial'
            sd_y <- 1 #do not standardise y in logistic setting
+           #sd_y_former <- sd_y
          },
          'cox'={
            fml <- 'cox'
            sd_y <- 1 #do not standardise y in cox regression setting
+           #sd_y_former <- sd_y
          }
   )
   mutrgt<-0
@@ -484,10 +491,10 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                  while(ol1$lambda>10^12 & itr2 < 10){
                    ol1 <- optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold,trace=F)
                    itr2 <- itr2 + 1
-                   if(ol1$lambda>10^12){
-                     ol1$lambda <- 10^2
-                     warning("Cross-validated global penalty lambda was >10^12 and set to 100")
-                   }
+                   # if(ol1$lambda>10^12){
+                   #   ol1$lambda <- 10^2
+                   #   warning("Cross-validated global penalty lambda was >10^12 and set to 100")
+                   # }
                  } 
                  if(itr2==10 & ol1$lambda>10^12){
                    ol1$lambda <- 10^12
@@ -572,6 +579,19 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                  
                  ol1 <- optL2(Surv(Y[,1],Y[,2]),penalized=XF, unpenalized =Xunpen,fold=fold,trace=F)
                  #ol2 <- optL2(Y,penalized=X[,penfctr!=0],unpenalized=Xunpen, fold=ol1$fold ) #gives same result, but the first is much faster for large p
+                 itr2<-1
+                 while(ol1$lambda>10^12 & itr2 < 10){
+                   ol1 <- optL2(Surv(Y[,1],Y[,2]),penalized=XF, unpenalized =Xunpen,fold=fold,trace=F)
+                   itr2 <- itr2 + 1
+                   # if(ol1$lambda>10^12){
+                   #   ol1$lambda <- 10^2
+                   #   warning("Cross-validated global penalty lambda was >10^12 and set to 100")
+                   # }
+                 } 
+                 if(itr2==10 & ol1$lambda>10^12){
+                   ol1$lambda <- 10^12
+                   warning("Cross-validated global penalty lambda was >10^12 and set to 10^12")
+                 }
                }
                if((!is.nan(compare) & grepl("CV",compare))| (!is.nan(compare) & compare==T)){
                  if(grepl("glmnet",lambda)) lambdaridge <- lambdaGLM$lambda.min/sd_y*n #fitted lambda
@@ -2100,6 +2120,11 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
       beta[pen] <- c(1/sqrt(lambdap[pen]/lambdaoverall)) * beta[pen] + muhatp[pen]
       
       # beta[pen] <- as.vector(glmGR$beta)[pen] + muhatp
+      
+      # if(standardise_Y){
+      #   beta <- beta*sd_y_former
+      #   glmGR$a0 <- glmGR$a0*sd_y_former
+      # } 
     }
     
     #-3.3.6 Update predictions on independent data (if given) ################################################
@@ -2131,6 +2156,11 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     ind0 <- which(gamma[,Itr+1]==0) #update index of groups with zero variance
     indnot0 <- which(gamma[,Itr+1]>0)
     Itr <- Itr+1
+    
+    # if(standardise_Y){
+    #   betasinit <- betasinit/sd_y_former
+    #   intrcptinit <- intrcptinit/sd_y_former
+    # } 
 
     if(length(ind0)==sum(G)){
       if(!silent) print(paste("All prior group variances estimated to be 0, iterating stopped after",Itr,"iteration(s)"))
@@ -2197,7 +2227,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
   #-6. Output -------------------------------------------------------------------------------------
   output <- list(
     beta=beta, #beta from ecpc (with Group Ridge penalties)
-    intercept=intrcptinit, #unpenalised intercept covariate
+    intercept=glmGR$a0, #unpenalised intercept covariate
     tauglobal=tauglobal, #overall tauglobal
     gammatilde = gammatilde[,nIt+1], #EB estimated prior group variance before truncating
     gamma=gamma[,nIt+1], #group weights variance
