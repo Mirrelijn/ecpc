@@ -401,18 +401,18 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                    Xunpen <- cbind(X[,penfctr==0],rep(1,n))
                  }
                  if(length(unpen)==0){
-                   ol1 <- optL2(Y,penalized=XF,fold=fold,trace=F,minlambda2=10^-9)
+                   ol1 <- optL2(Y,penalized=XF,fold=fold,trace=F,minlambda2=10^-6)
                  }else{
-                   ol1 <- optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-9)
+                   ol1 <- optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-6)
                  }
                  
                  #ol2 <- optL2(Y,penalized=X[,penfctr!=0],unpenalized=Xunpen, fold=ol1$fold ) #gives same result, but the first is much faster for large p
                  itr2<-1
                  while(ol1$lambda>10^12 & itr2 < 10){
                    if(length(unpen)==0){
-                     ol1 <- optL2(Y,penalized=XF,fold=fold,trace=F,minlambda2=10^-9)
+                     ol1 <- optL2(Y,penalized=XF,fold=fold,trace=F,minlambda2=10^-6)
                    }else{
-                     ol1 <- optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-9)
+                     ol1 <- optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-6)
                    }
                    itr2 <- itr2 + 1
                  } 
@@ -485,11 +485,11 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                    Xunpen <- cbind(X[,penfctr==0]) #if empty vector, no unpenalised and no intercept
                  }
                  
-                 ol1 <- optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-9)
+                 ol1 <- optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-6)
                  #ol2 <- optL2(Y,penalized=X[,penfctr!=0],unpenalized=Xunpen, fold=ol1$fold ) #gives same result, but the first is much faster for large p
                  itr2<-1
                  while(ol1$lambda>10^12 & itr2 < 10){
-                   ol1 <- optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-9)
+                   ol1 <- optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-6)
                    itr2 <- itr2 + 1
                    # if(ol1$lambda>10^12){
                    #   ol1$lambda <- 10^2
@@ -577,11 +577,11 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                  XF <- X[,penfctr!=0]%*% Xsvd$v
                  Xunpen <- cbind(X[,penfctr==0]) #if empty vector, no unpenalised and no intercept
                  
-                 ol1 <- optL2(Surv(Y[,1],Y[,2]),penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-9)
+                 ol1 <- optL2(Surv(Y[,1],Y[,2]),penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-6)
                  #ol2 <- optL2(Y,penalized=X[,penfctr!=0],unpenalized=Xunpen, fold=ol1$fold ) #gives same result, but the first is much faster for large p
                  itr2<-1
                  while(ol1$lambda>10^12 & itr2 < 10){
-                   ol1 <- optL2(Surv(Y[,1],Y[,2]),penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-9)
+                   ol1 <- optL2(Surv(Y[,1],Y[,2]),penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-6)
                    itr2 <- itr2 + 1
                    # if(ol1$lambda>10^12){
                    #   ol1$lambda <- 10^2
