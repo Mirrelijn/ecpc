@@ -408,7 +408,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                  
                  #ol2 <- optL2(Y,penalized=X[,penfctr!=0],unpenalized=Xunpen, fold=ol1$fold ) #gives same result, but the first is much faster for large p
                  itr2<-1
-                 while(ol1$lambda>10^12 & itr2 < 10){
+                 while((ol1$lambda>10^12 | ol1$lambda<10^-5 ) & itr2 < 10){
                    if(length(unpen)==0){
                      ol1 <- optL2(Y,penalized=XF,fold=fold,trace=F,minlambda2=10^-6)
                    }else{
@@ -417,8 +417,14 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                    itr2 <- itr2 + 1
                  } 
                  if(itr2==10 & ol1$lambda>10^12){
-                   ol1$lambda <- 10^6
-                   warning("Cross-validated global penalty lambda was >10^12 and set to 10^6")
+                   if(ol1$lambda>10^10){
+                     ol1$lambda <- 10^12
+                     warning("Cross-validated global penalty lambda was >10^12 and set to 10^12")
+                   }
+                   if(ol1$lambda<10^-5){
+                     ol1$lambda <- 1
+                     warning("Cross-validated global penalty lambda was <10-5 and set to 1")
+                   }
                  }
                }
                
@@ -488,7 +494,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                  ol1 <- optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-6)
                  #ol2 <- optL2(Y,penalized=X[,penfctr!=0],unpenalized=Xunpen, fold=ol1$fold ) #gives same result, but the first is much faster for large p
                  itr2<-1
-                 while(ol1$lambda>10^12 & itr2 < 10){
+                 while((ol1$lambda>10^12 | ol1$lambda<10^-5 ) & itr2 < 10){
                    ol1 <- optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-6)
                    itr2 <- itr2 + 1
                    # if(ol1$lambda>10^12){
@@ -496,9 +502,15 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                    #   warning("Cross-validated global penalty lambda was >10^12 and set to 100")
                    # }
                  } 
-                 if(itr2==10 & ol1$lambda>10^12){
-                   ol1$lambda <- 10^12
-                   warning("Cross-validated global penalty lambda was >10^12 and set to 10^12")
+                 if(itr2==10 & (ol1$lambda>10^10 | ol1$lambda<10^-5 )){
+                   if(ol1$lambda>10^10){
+                     ol1$lambda <- 10^12
+                     warning("Cross-validated global penalty lambda was >10^12 and set to 10^12")
+                   }
+                   if(ol1$lambda<10^-5){
+                     ol1$lambda <- 1
+                     warning("Cross-validated global penalty lambda was <10-5 and set to 1")
+                   }
                  }
                  
                }
@@ -580,7 +592,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                  ol1 <- optL2(Surv(Y[,1],Y[,2]),penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-6)
                  #ol2 <- optL2(Y,penalized=X[,penfctr!=0],unpenalized=Xunpen, fold=ol1$fold ) #gives same result, but the first is much faster for large p
                  itr2<-1
-                 while(ol1$lambda>10^12 & itr2 < 10){
+                 while((ol1$lambda>10^10 | ol1$lambda<10^-5 ) & itr2 < 10){
                    ol1 <- optL2(Surv(Y[,1],Y[,2]),penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-6)
                    itr2 <- itr2 + 1
                    # if(ol1$lambda>10^12){
@@ -588,9 +600,15 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                    #   warning("Cross-validated global penalty lambda was >10^12 and set to 100")
                    # }
                  } 
-                 if(itr2==10 & ol1$lambda>10^12){
-                   ol1$lambda <- 10^12
-                   warning("Cross-validated global penalty lambda was >10^12 and set to 10^12")
+                 if(itr2==10 & (ol1$lambda>10^10 | ol1$lambda<10^-5 )){
+                   if(ol1$lambda>10^10){
+                     ol1$lambda <- 10^12
+                     warning("Cross-validated global penalty lambda was >10^12 and set to 10^12")
+                   }
+                   if(ol1$lambda<10^-5){
+                     ol1$lambda <- 1
+                     warning("Cross-validated global penalty lambda was <10-5 and set to 1")
+                   }
                  }
                }
                if((!is.nan(compare) & grepl("CV",compare))| (!is.nan(compare) & compare==T)){
