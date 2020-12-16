@@ -2065,6 +2065,12 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     
     #-3.3.4 Update group-specific penalties ###################################################################
     if(is.nan(tausq)){
+      if(all(gamma[,Itr+1]==0)){
+        if(all(muhatp==0)){
+          warning("All group weights estimated at 0 and set to 1 to retrieve ordinary ridge performance")
+          gamma[,Itr+1]<-rep(1,G)
+        }
+      }
       if(all(partWeightsTauG==0)){#set all partition/group weights to 1 (i.e. no difference in partitions/groups)
         lambdap<-sigmahat/(tauglobal[datablockNo]*as.vector(c(gamma[,1])%*%Zt)) #target tau/overall
         }else{
@@ -2082,10 +2088,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     #-3.3.5 Update beta using glmnet #######################################################################
     if(!silent) print("Estimate regression coefficients")
     if(all(gamma[,Itr+1]==0)){
-      if(all(muhatp==0)){
-        warning("All group weights estimated at 0 and set to 1 to retrieve ordinary ridge performance")
-        gamma[,Itr+1]<-rep(1,G)
-      }else{
+      if(!all(muhatp==0)){
         beta <- muhatp
         if(intrcpt){
           if(model=="linear"){
@@ -2097,7 +2100,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
           glmGR <- list(a0=0)
         }
         warning("All tau (set to) 0")
-      }
+    }
       
     }else{
       if(model=="linear"){
