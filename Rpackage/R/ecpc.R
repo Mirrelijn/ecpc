@@ -2082,17 +2082,23 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     #-3.3.5 Update beta using glmnet #######################################################################
     if(!silent) print("Estimate regression coefficients")
     if(all(gamma[,Itr+1]==0)){
-      beta <- muhatp
-      if(intrcpt){
-        if(model=="linear"){
-          glmGR <- list(a0=sum(Y-X%*%beta)/n)
-        }else if(model=='logistic'){
-          glmGR <- list(a0=sum(Y-exp(X%*%beta)/(1+exp(X%*%beta)))/n) 
-        }
+      if(all(muhatp==0)){
+        warning("All group weights estimated at 0 and set to 1 to retrieve ordinary ridge performance")
+        gamma[,Itr+1]<-rep(1,G)
       }else{
-        glmGR <- list(a0=0)
+        beta <- muhatp
+        if(intrcpt){
+          if(model=="linear"){
+            glmGR <- list(a0=sum(Y-X%*%beta)/n)
+          }else if(model=='logistic'){
+            glmGR <- list(a0=sum(Y-exp(X%*%beta)/(1+exp(X%*%beta)))/n) 
+          }
+        }else{
+          glmGR <- list(a0=0)
+        }
+        warning("All tau (set to) 0")
       }
-      warning("All tau (set to) 0")
+      
     }else{
       if(model=="linear"){
         sd_y2 <- sqrt(var(Y-X %*% muhatp)*(n-1)/n)[1]
