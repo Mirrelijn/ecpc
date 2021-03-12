@@ -3,12 +3,14 @@
 #The method combines empirical Bayes estimation for the group hyperparameters with an extra level of shrinkage
 #to be able to handle various co-data, including overlapping groups, hierarchical groups and continuous co-data.
 
-ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
-                 hypershrinkage,unpen=NULL,intrcpt=T,model,postselection="elnet+dense",maxsel=10,
-                 lambda="CV",fold=10,sigmasq=NaN,w=NaN,
-                 nsplits=100,weights=T,profplotRSS=F,
-                 Y2=NaN,X2=NaN,compare=T,
-                 mu=F,normalise=F,silent=F,
+
+ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
+                 unpen=NULL,intrcpt=TRUE,model=c("linear", "logistic", "cox"),
+                 postselection="elnet,dense",maxsel=10,
+                 lambda=NULL,fold=10,sigmasq=NaN,w=NaN,
+                 nsplits=100,weights=TRUE,profplotRSS=F,
+                 Y2=NaN,X2=NaN,compare=TRUE,
+                 mu=FALSE,normalise=FALSE,silent=FALSE,
                  datablocks=NULL#,standardise_Y=F
                  #nIt=1,betaold=NaN
                  ){
@@ -17,17 +19,17 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
   #Data and co-data:
   # Y: nx1 vector with response data
   # X: nxp matrix with observed data
-  # groupings: list of m elements, each element one co-data grouping 
-  #            with each grouping a list of groups containing the indices of covariates in that group 
-  # groupings.grouplvl: (optional) hierarchical groups define a grouping on group level.
-  #            list of m elements (corresponding to groupings), with NULL if there is no structure on group level, or 
+  # groupsets: list of m elements, each element one co-data group set
+  #            with each group set a list of groups containing the indices of covariates in that group 
+  # groupsets.grouplvl: (optional) hierarchical groups define a group set on group level.
+  #            list of m elements (corresponding to groupsets), with NULL if there is no structure on group level, or 
   #            with a list of groups containing the indices of groups of covariates in that group
   #
   #Model:
-  # hypershrinkage: vector of m strings indicating shrinkage type used in level of extra shrinkage for each of the m groupings, 
+  # hypershrinkage: vector of m strings indicating shrinkage type used in level of extra shrinkage for each of the m group sets, 
   #                either in the the form "type" 
   #                or "type1,type2", in which type1 is used to select groups, and type 2 to estimate selected group parameters
-  # unpen: vector with indices of covariates that should not be penalised (TD: adapt mlestlin)
+  # unpen: vector with indices of covariates that should not be penalised (TD: adapt .mlestlin)
   # intrcpt: T/F to use/not use intercept (always unpenalised)
   # model: type of response Y (linear, logistic or Cox)
   # postselection: T/F if parsimonious model is/is not needed, or string with type of posterior selection method;
@@ -40,7 +42,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
   #         -"ML" or "CV" if (approximate) ML criterium or cross-validation needs to be used to estimate overall lambda
   # fold: number of folds used in inner CV if tau^_{global}^2 is estimated with CV
   # sigmasq: (linear model) given variance of Y~N(X*beta,sd=sqrt(sigmasq)), else estimated
-  # w: (optional) mx1 vector to fix grouping weights at given value.
+  # w: (optional) mx1 vector to fix group set weights at given value.
   #
   #Local hyperparameter estimation:
   # nsplits: number of splits used in RSS criterion in the extra level of shrinkage
@@ -66,8 +68,8 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
   p <- dim(X)[2] #number of covariates 
   if(!missing(X2)) n2<-dim(X2)[1] #number of samples in independent data set x2 if given
   multi <- F; if(!is.null(datablocks)) multi <- T #use multiple global tau, one for each data block
-  
-  if(missing(model)){
+   
+  if(length(model)>1){
     if(all(is.element(Y,c(0,1))) || is.factor(Y)){
       model <- "logistic" 
     } else if(all(is.numeric(Y)) & !(is.matrix(Y) && dim(Y)[2]==2)){
@@ -77,7 +79,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     }
   }
   levelsY<-NaN
-  if(is.nan(lambda)) lambda <- "CV"
+  if(length(lambda)==0) lambda <- "CV"#ifelse(model=="linear","ML","CV")
   if(model=="logistic"){
     levelsY<-cbind(c(0,1),c(0,1))
     if(lambda=="ML"){
@@ -99,7 +101,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
   }
   if(model=='cox'){
     intrcpt <- F
-    if(is.nan(lambda)) lambda <- "CV"
+    if(length(lambda)==0) lambda <- "CV"
     if(lambda=="ML"){
       if(!silent) print("For cox model, no ML approximation for overall tau available. Use CV instead.")
       lambda <- "CV"
@@ -137,14 +139,14 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
   penfctr <- rep(1,p) #factor=1 for penalised covariates
   if(length(unpen)>0){
     penfctr[unpen] <- 0 #factor=0 for unpenalised covariates
-    if(any(unlist(groupings)%in%unpen)){
-      warning("Unpenalised covariates removed from grouping")
-      for(i in 1:length(groupings)){
-        for(j in 1:length(groupings[[i]])){
-          if(all(groupings[[i]][[j]]%in%unpen)){
-            groupings[[i]][[j]] <- NULL #remove whole group if all covariates unpenalised
+    if(any(unlist(groupsets)%in%unpen)){
+      warning("Unpenalised covariates removed from group set")
+      for(i in 1:length(groupsets)){
+        for(j in 1:length(groupsets[[i]])){
+          if(all(groupsets[[i]][[j]]%in%unpen)){
+            groupsets[[i]][[j]] <- NULL #remove whole group if all covariates unpenalised
           }else{
-            groupings[[i]][[j]] <- groupings[[i]][[j]][!(groupings[[i]][[j]]%in%unpen)]
+            groupsets[[i]][[j]] <- groupsets[[i]][[j]][!(groupsets[[i]][[j]]%in%unpen)]
           }
         }
       }
@@ -152,17 +154,17 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
   }
   
   #-2.1 Variables describing groups and partition(s) =================================================
-  G <- sapply(groupings,length) #1xm vector with G_i, number of groups in partition i
+  G <- sapply(groupsets,length) #1xm vector with G_i, number of groups in partition i
   m <- length(G) #number of partitions
   if(missing(hypershrinkage)){
     hypershrinkage<-rep("ridge",m)
   }
   if(any(grepl("hierLasso",hypershrinkage))){
-    if(length(groupings.grouplvl)==0){
-      stop("Grouping on group level for hierarchical groups is missing")
+    if(length(groupsets.grouplvl)==0){
+      stop("Group set on group level for hierarchical groups is missing")
     }
-    if(!is.list(groupings.grouplvl) | length(groupings.grouplvl)!=m){
-      stop("Groupings on group level should be a nested list")
+    if(!is.list(groupsets.grouplvl) | length(groupsets.grouplvl)!=m){
+      stop("Group sets on group level should be a nested list")
     }
   }
   indGrpsGlobal <- list(1:G[1]) #global group index in case we have multiple partitions
@@ -171,13 +173,13 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
       indGrpsGlobal[[i]] <- (sum(G[1:(i-1)])+1):sum(G[1:i])
     }
   }
-  Kg <- lapply(groupings,function(x)(sapply(x,length))) #m-list with G_i vector of group sizes in partition i
+  Kg <- lapply(groupsets,function(x)(sapply(x,length))) #m-list with G_i vector of group sizes in partition i
   #ind1<-ind
   
   #ind <- (matrix(1,G,1)%*%ind)==(1:G)#sparse matrix with ij element T if jth element in group i, otherwise F
   i<-unlist(sapply(1:sum(G),function(x){rep(x,unlist(Kg)[x])}))
-  j<-unlist(unlist(groupings))
-  ind <- sparseMatrix(i,j,x=1) #sparse matrix with ij element 1 if jth element in group i (global index), otherwise 0
+  j<-unlist(unlist(groupsets))
+  ind <- Matrix::sparseMatrix(i,j,x=1) #sparse matrix with ij element 1 if jth element in group i (global index), otherwise 0
   
   Ik <- lapply(1:m,function(i){
     x<-rep(0,sum(G))
@@ -185,22 +187,22 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     as.vector(x%*%ind)}) #list for each partition with px1 vector with number of groups beta_k is in
   #sparse matrix with ij element 1/Ij if beta_j in group i
   
-  #make co-data matrix Z (Zt transpose of Z as in paper, with co-data matrices stacked for multiple groupings)
+  #make co-data matrix Z (Zt transpose of Z as in paper, with co-data matrices stacked for multiple groupsets)
   Zt<-ind; 
   if(G[1]>1){
-    Zt[1:G[1],]<-t(t(ind[1:G[1],])/apply(ind[1:G[1],],2,sum))
+    Zt[1:G[1],]<-Matrix::t(Matrix::t(ind[1:G[1],])/apply(ind[1:G[1],],2,sum))
   }
   if(m>1){
     for(i in 2:m){
       if(G[i]>1){
-        Zt[indGrpsGlobal[[i]],]<-t(t(ind[indGrpsGlobal[[i]],])/
+        Zt[indGrpsGlobal[[i]],]<-Matrix::t(Matrix::t(ind[indGrpsGlobal[[i]],])/
                                                      apply(ind[indGrpsGlobal[[i]],],2,sum))
       }
     }
   }
 
   if(dim(Zt)[2]<p) Zt <- cbind(Zt,matrix(rep(NaN,(p-dim(Zt)[2])*sum(G)),c(sum(G),p-dim(Zt)[2])))
-  PenGrps <- as.matrix(Zt[,!((1:p)%in%unpen)]%*%t(Zt[,!((1:p)%in%unpen)])) #penalty matrix groups
+  PenGrps <- as.matrix(Zt[,!((1:p)%in%unpen)]%*%Matrix::t(Zt[,!((1:p)%in%unpen)])) #penalty matrix groups
 
   #-2.2 Weight variables for extra shrinkage on group parameters =====================================
   # Compute weights and corresponding weight matrix
@@ -234,7 +236,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
   colnames(muhat)<-paste("Itr",0:nIt,sep="")
   colnames(gammatilde)<-paste("Itr",0:nIt,sep="")
   colnames(gamma)<-paste("Itr",0:nIt,sep="")
-  tempRow <- unlist(lapply(1:length(G),function(x){paste("Grouping",x,".G",1:G[x],sep="")}))
+  tempRow <- unlist(lapply(1:length(G),function(x){paste("Group set",x,".G",1:G[x],sep="")}))
   rownames(muhat)<-tempRow;  rownames(gammatilde)<-tempRow;  rownames(gamma)<-tempRow
   
   weightsMu <- array(NaN,c(sum(G),nIt+1))
@@ -301,22 +303,22 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     
     #compute multi-lambda; from multiridge package demo:
     #datablocks: list with each element a data type containing indices of covariates with that data type 
-    Xbl <- createXblocks(lapply(datablocks,function(ind) X[,intersect(ind,ind[!(ind%in%unpen)])]))
-    XXbl <- createXXblocks(lapply(datablocks,function(ind) X[,intersect(ind,ind[!(ind%in%unpen)])]))
+    Xbl <- multiridge::createXblocks(lapply(datablocks,function(ind) X[,intersect(ind,ind[!(ind%in%unpen)])]))
+    XXbl <- multiridge::createXXblocks(lapply(datablocks,function(ind) X[,intersect(ind,ind[!(ind%in%unpen)])]))
     
     #Find initial lambda: fast CV per data block, separately using SVD. CV is done using the penalized package
-    cvperblock <- fastCV(Xbl,Y=Y,kfold=fold,fixedfolds = F,X1=X[,(1:p)%in%unpen],intercept=intrcpt)
+    cvperblock <- multiridge::fastCV(Xbl,Y=Y,kfold=fold,fixedfolds = F,X1=X[,(1:p)%in%unpen],intercept=intrcpt)
     lambdas <- cvperblock$lambdas
     lambdas[lambdas==Inf] <- 10^6
     
     #Find joint lambdas: TD: sigma estimate in linear?
-    leftout <- CVfolds(Y=Y,kfold=fold,nrepeat=3,fixedfolds = F) #Create (repeated) CV-splits of the data
+    leftout <- multiridge::CVfolds(Y=Y,kfold=fold,nrepeat=3,fixedfolds = F) #Create (repeated) CV-splits of the data
     if(sum((1:p)%in%unpen)>0){
-      jointlambdas <- optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
+      jointlambdas <- multiridge::optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
                                      X1=X[,(1:p)%in%unpen],intercept=intrcpt,
                                      score=ifelse(model == "linear", "mse", "loglik"),model=model)
     }else{
-      jointlambdas <- optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
+      jointlambdas <- multiridge::optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
                                      intercept=intrcpt,
                                      score=ifelse(model == "linear", "mse", "loglik"),model=model)
     }
@@ -329,7 +331,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     if(model=="linear"){
       if(!is.nan(sigmasq)) sigmahat <- sigmasq
       else{
-        XtDinvX <- SigmaFromBlocks(XXblocks = XXbl,lambda)
+        XtDinvX <- multiridge::SigmaFromBlocks(XXblocks = XXbl,lambda)
         if(length(unpen)>0){
           Xunpen <- X[,(1:p)%in%unpen]
           if(intrcpt) Xunpen <- cbind(Xunpen,rep(1,n))
@@ -351,7 +353,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
         #                                         sparseMatrix(i=1:sum(!((1:p)%in%unpen)),j=1:sum(!((1:p)%in%unpen)),
         #                                                  x=c(1/sqrt(lambdap[lambdap!=0]/lambdaoverall))))
         # #Use ML for sigma estimation and/or initial lambda (tausq) estimate and/or mu
-        # par <- mlestlin(Y,Xacc,lambda=lambdaoverall,sigmasq=NaN,mu=0,tausq=NaN) #use maximum marginal likelihood
+        # par <- .mlestlin(Y,Xacc,lambda=lambdaoverall,sigmasq=NaN,mu=0,tausq=NaN) #use maximum marginal likelihood
         # sigmahat <- par[2] #sigma could be optimised with CV in the end if not known
       }
     }
@@ -361,13 +363,13 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     mutrgt <- 0 #TD: with offset
     
     #Compute betas
-    XXT <- SigmaFromBlocks(XXbl,penalties=lambda) #create nxn Sigma matrix = sum_b [lambda_b)^{-1} X_b %*% t(X_b)]
+    XXT <- multiridge::SigmaFromBlocks(XXbl,penalties=lambda) #create nxn Sigma matrix = sum_b [lambda_b)^{-1} X_b %*% t(X_b)]
     if(sum((1:p)%in%unpen)>0){
-      fit <- IWLSridge(XXT,Y=Y, model=model,intercept=intrcpt,X1=X[,(1:p)%in%unpen]) #Fit. fit$etas contains the n linear predictors
+      fit <- multiridge::IWLSridge(XXT,Y=Y, model=model,intercept=intrcpt,X1=X[,(1:p)%in%unpen]) #Fit. fit$etas contains the n linear predictors
     }else{
-      fit <- IWLSridge(XXT,Y=Y, model=model,intercept=intrcpt) #Fit. fit$etas contains the n linear predictors
+      fit <- multiridge::IWLSridge(XXT,Y=Y, model=model,intercept=intrcpt) #Fit. fit$etas contains the n linear predictors
     }
-    betas <- betasout(fit, Xblocks=Xbl, penalties=lambda) #Find betas.
+    betas <- multiridge::betasout(fit, Xblocks=Xbl, penalties=lambda) #Find betas.
     intrcptinit <- c(betas[[1]][1]) #intercept
     betasinit <- rep(0,p) 
     betasinit[(1:p)%in%unpen] <- betas[[1]][-1] #unpenalised variables
@@ -390,9 +392,28 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
              if((!is.nan(compare) & grepl("CV",compare)) | grepl("CV",lambda)){
                #use glmnet to do CV; computationally more expensive but other optimising criteria possible
                if(grepl("glmnet",lambda)){ 
-                 lambdaGLM<-cv.glmnet(X,Y,nfolds=fold,alpha=0,family=fml,
-                                      standardize = F,intercept=intrcpt,
-                                      penalty.factor=penfctr,keep=T) #alpha=0 for ridge
+                 if(grepl("glmnetLD",lambda)){
+                   Xsvd <- svd(X[,penfctr!=0])
+                   XF <- X[,penfctr!=0]%*% Xsvd$v
+                   Xunpen <- cbind(X[,penfctr==0]) #if empty vector, no unpenalised and no intercept
+                   if(intrcpt){
+                     Xunpen <- cbind(X[,penfctr==0],rep(1,n))
+                   }
+                   if(length(unpen)==0){
+                     lambdaGLM<-glmnet::cv.glmnet(XF,Y,nfolds=fold,alpha=0,family=fml,
+                                                  standardize = F,intercept=F,
+                                                  keep=T) #alpha=0 for ridge
+                   }else{
+                     pfLD <- c(rep(1,dim(XF)[2]),rep(0,length(unpen)))
+                     lambdaGLM<-glmnet::cv.glmnet(cbind(XF,Xunpen),Y,nfolds=fold,alpha=0,family=fml,
+                                                  standardize = F,intercept=F,
+                                                  penalty.factor=pfLD,keep=T) #alpha=0 for ridge
+                   }
+                 }else{
+                   lambdaGLM<-glmnet::cv.glmnet(X,Y,nfolds=fold,alpha=0,family=fml,
+                                                standardize = F,intercept=intrcpt,
+                                                penalty.factor=penfctr,keep=T) #alpha=0 for ridge
+                 }
                }else{ #use penalized to do CV
                  Xsvd <- svd(X[,penfctr!=0])
                  XF <- X[,penfctr!=0]%*% Xsvd$v
@@ -401,18 +422,18 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                    Xunpen <- cbind(X[,penfctr==0],rep(1,n))
                  }
                  if(length(unpen)==0){
-                   ol1 <- optL2(Y,penalized=XF,fold=fold,trace=F)
+                   ol1 <- penalized::optL2(Y,penalized=XF,fold=fold,trace=F)
                  }else{
-                   ol1 <- optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold,trace=F)
+                   ol1 <- penalized::optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold,trace=F)
                  }
                  
-                 #ol2 <- optL2(Y,penalized=X[,penfctr!=0],unpenalized=Xunpen, fold=ol1$fold ) #gives same result, but the first is much faster for large p
+                 #ol2 <- penalized::optL2(Y,penalized=X[,penfctr!=0],unpenalized=Xunpen, fold=ol1$fold ) #gives same result, but the first is much faster for large p
                  itr2<-1
                  while((ol1$lambda>10^12 | ol1$lambda<10^-5 ) & itr2 < 10){
                    if(length(unpen)==0){
-                     ol1 <- optL2(Y,penalized=XF,fold=fold,trace=F)
+                     ol1 <- penalized::optL2(Y,penalized=XF,fold=fold,trace=F)
                    }else{
-                     ol1 <- optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold,trace=F)
+                     ol1 <- penalized::optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold,trace=F)
                    }
                    itr2 <- itr2 + 1
                  } 
@@ -447,7 +468,17 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                #Estimate sigma^2, lambda and initial estimate for tau^2 (all betas in one group), mu=0 by default
                #NOTE, TD: not yet possible to include unpenalised covariates in MML
                if(grepl("ML",lambda)){ lambda <- NaN}
-               par <- mlestlin(Y,X,lambda=lambda,sigmasq=sigmasq,mu=mutrgt,tausq=tausq) #use maximum marginal likelihood
+               Xrowsum <- apply(X,1,sum)
+               
+               XXt <- X[,penfctr!=0]%*%t(X[,penfctr!=0])
+               
+               Xunpen <- cbind(X[,penfctr==0]) #if empty vector, no unpenalised and no intercept
+               if(intrcpt){
+                 Xunpen <- cbind(X[,penfctr==0],rep(1,n))
+               }
+               
+               par <- .mlestlin(Y=Y,XXt=XXt,Xrowsum=Xrowsum,
+                                lambda=lambda,sigmasq=sigmasq,mu=mutrgt,tausq=tausq) #use maximum marginal likelihood
                lambda <- par[1] 
                sigmahat <- par[2] #sigma could be optimised with CV in the end if not known
                muhat[,1] <- par[3] 
@@ -465,7 +496,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
              
              muinitp <- as.vector(c(muhat[,1])%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p (0 for unpenalised covariates) 
              muinitp[(1:p)%in%unpen] <- 0
-             glmGRtrgt <- glmnet(X,Y,alpha=0,
+             glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
                                  lambda = lambda/n*sd_y,family=fml,
                                  offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], intercept = intrcpt, standardize = F,
                                  penalty.factor=penfctr,thresh = 10^-10)
@@ -479,9 +510,28 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
              if((!is.nan(compare) & grepl("CV",compare)) | grepl("CV",lambda)){
                #use glmnet to do CV; computationally more expensive but other optimising criteria possible
                if(grepl("glmnet",lambda)){ 
-                 lambdaGLM<-cv.glmnet(X,Y,nfolds=fold,alpha=0,family=fml,
-                                      standardize = F,intercept=intrcpt,
-                                      penalty.factor=penfctr,keep=T) #alpha=0 for ridge
+                 if(grepl("glmnetLD",lambda)){
+                   Xsvd <- svd(X[,penfctr!=0])
+                   XF <- X[,penfctr!=0]%*% Xsvd$v
+                   Xunpen <- cbind(X[,penfctr==0]) #if empty vector, no unpenalised and no intercept
+                   if(intrcpt){
+                     Xunpen <- cbind(X[,penfctr==0],rep(1,n))
+                   }
+                   if(length(unpen)==0){
+                     lambdaGLM<-glmnet::cv.glmnet(XF,Y,nfolds=fold,alpha=0,family=fml,
+                                                  standardize = F,intercept=F,
+                                                  keep=T) #alpha=0 for ridge
+                   }else{
+                     pfLD <- c(rep(1,dim(XF)[2]),rep(0,length(unpen)))
+                     lambdaGLM<-glmnet::cv.glmnet(cbind(XF,Xunpen),Y,nfolds=fold,alpha=0,family=fml,
+                                                  standardize = F,intercept=F,
+                                                  penalty.factor=pfLD,keep=T) #alpha=0 for ridge
+                   }
+                 }else{
+                   lambdaGLM<-glmnet::cv.glmnet(X,Y,nfolds=fold,alpha=0,family=fml,
+                                        standardize = F,intercept=intrcpt,
+                                        penalty.factor=penfctr,keep=T) #alpha=0 for ridge
+                 }
                }else{ #use penalized to do CV
                  Xsvd <- svd(X[,penfctr!=0])
                  XF <- X[,penfctr!=0]%*% Xsvd$v
@@ -491,11 +541,11 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                    Xunpen <- cbind(X[,penfctr==0]) #if empty vector, no unpenalised and no intercept
                  }
                  
-                 ol1 <- optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-6)
-                 #ol2 <- optL2(Y,penalized=X[,penfctr!=0],unpenalized=Xunpen, fold=ol1$fold ) #gives same result, but the first is much faster for large p
+                 ol1 <- penalized::optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-6)
+                 #ol2 <- penalized::optL2(Y,penalized=X[,penfctr!=0],unpenalized=Xunpen, fold=ol1$fold ) #gives same result, but the first is much faster for large p
                  itr2<-1
                  while((ol1$lambda>10^12 | ol1$lambda<10^-5 ) & itr2 < 10){
-                   ol1 <- optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-6)
+                   ol1 <- penalized::optL2(Y,penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-6)
                    itr2 <- itr2 + 1
                    # if(ol1$lambda>10^12){
                    #   ol1$lambda <- 10^2
@@ -522,6 +572,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                  if(grepl("glmnet",lambda)) lambda <- lambdaGLM$lambda.min/sd_y*n #using glmnet
                  else lambda <- ol1$lambda #using penalized
                } 
+               #print(lambda)
              }
              #Use approximate ML criterium initial lambda (tausq) estimate 
              if((!is.nan(compare) & grepl("ML",compare)) | grepl("ML",lambda)){
@@ -569,7 +620,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
              
              muinitp<- as.vector(c(muhat[,1])%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p 
              muinitp[(1:p)%in%unpen] <- 0
-             glmGRtrgt <- glmnet(X,Y,alpha=0,
+             glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
                                  lambda = lambda/n*sd_y,family=fml,
                                  offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], intercept = intrcpt, standardize = F,
                                  penalty.factor=penfctr,thresh=10^-10)
@@ -581,19 +632,36 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
              #Cross-validation lambda
              if((!is.nan(compare) & grepl("CV",compare)) | grepl("CV",lambda)){
                if(grepl("glmnet",lambda)){ 
-                 lambdaGLM<-cv.glmnet(X,Y,nfolds=fold,alpha=0,family=fml,
-                                      standardize = F,
-                                      penalty.factor=penfctr,keep=T) #alpha=0 for ridge
+                 if(grepl("glmnetLD",lambda)){
+                   Xsvd <- svd(X[,penfctr!=0])
+                   XF <- X[,penfctr!=0]%*% Xsvd$v
+                   Xunpen <- cbind(X[,penfctr==0]) #if empty vector, no unpenalised and no intercept
+                   
+                   if(length(unpen)==0){
+                     lambdaGLM<-glmnet::cv.glmnet(XF,Y,nfolds=fold,alpha=0,family=fml,
+                                                  standardize = F,
+                                                  keep=T) #alpha=0 for ridge
+                   }else{
+                     pfLD <- c(rep(1,dim(XF)[2]),rep(0,length(unpen)))
+                     lambdaGLM<-glmnet::cv.glmnet(cbind(XF,Xunpen),Y,nfolds=fold,alpha=0,family=fml,
+                                                  standardize = F,
+                                                  penalty.factor=pfLD,keep=T) #alpha=0 for ridge
+                   }
+                 }else{
+                   lambdaGLM<-glmnet::cv.glmnet(X,Y,nfolds=fold,alpha=0,family=fml,
+                                        standardize = F,
+                                        penalty.factor=penfctr,keep=T) #alpha=0 for ridge
+                 }
                }else{ #use penalized to do CV
                  Xsvd <- svd(X[,penfctr!=0])
                  XF <- X[,penfctr!=0]%*% Xsvd$v
                  Xunpen <- cbind(X[,penfctr==0]) #if empty vector, no unpenalised and no intercept
                  
-                 ol1 <- optL2(Surv(Y[,1],Y[,2]),penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-6)
-                 #ol2 <- optL2(Y,penalized=X[,penfctr!=0],unpenalized=Xunpen, fold=ol1$fold ) #gives same result, but the first is much faster for large p
+                 ol1 <- penalized::optL2(survival::Surv(Y[,1],Y[,2]),penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-6)
+                 #ol2 <- penalized::optL2(Y,penalized=X[,penfctr!=0],unpenalized=Xunpen, fold=ol1$fold ) #gives same result, but the first is much faster for large p
                  itr2<-1
                  while((ol1$lambda>10^10 | ol1$lambda<10^-5 ) & itr2 < 10){
-                   ol1 <- optL2(Surv(Y[,1],Y[,2]),penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-6)
+                   ol1 <- penalized::optL2(survival::Surv(Y[,1],Y[,2]),penalized=XF, unpenalized =Xunpen,fold=fold,trace=F,minlambda2=10^-6)
                    itr2 <- itr2 + 1
                    # if(ol1$lambda>10^12){
                    #   ol1$lambda <- 10^2
@@ -631,7 +699,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
              lambdap[(1:p)%in%unpen] <- 0
              muinitp<- as.vector(c(muhat[,1])%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p
              muinitp[(1:p)%in%unpen] <- 0
-             glmGRtrgt <- glmnet(X,Y,alpha=0,
+             glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
                                  lambda = lambda/n*sd_y,family=fml,
                                  offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], standardize = F,
                                  penalty.factor=penfctr,thresh = 10^-10)
@@ -650,7 +718,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     #copy penalty parameter matrix ridge: add 0 for unpenalised intercept if included
     if(intrcpt | intrcptGLM){
       #Deltac <- diag(c(lambdap,0))
-      Deltac <- sparseMatrix(i=1:(length(lambdap)+1),j=1:(length(lambdap)+1),x=c(lambdap,0))
+      Deltac <- Matrix::sparseMatrix(i=1:(length(lambdap)+1),j=1:(length(lambdap)+1),x=c(lambdap,0))
       if(model=="logistic"){
         Deltac<-2*Deltac
         #reweight Xc for logistic model
@@ -661,7 +729,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
       }
     } else{
       #Deltac <- diag(c(lambdap))
-      Deltac <- sparseMatrix(i=1:length(lambdap),j=1:length(lambdap),x=c(lambdap))
+      Deltac <- Matrix::sparseMatrix(i=1:length(lambdap),j=1:length(lambdap),x=c(lambdap))
       if(model=="logistic"){
         Deltac<-2*Deltac
         #reweight Xc for logistic model
@@ -704,16 +772,16 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
         }
         eigP1$values<-pmax(0,eigP1$values) #set eigenvalues that are small negative due to numerical errors to 0
         CP1 <- eigP1$vectors %*% diag(sqrt(eigP1$values))
-        Xpen <- as.matrix(t(CP1)%*%Xc[,pen]%*%sparseMatrix(i=1:length(pen),j=1:length(pen),x=diag(Deltac)[pen]^(-0.5)))
+        Xpen <- as.matrix(t(CP1)%*%Xc[,pen]%*%Matrix::sparseMatrix(i=1:length(pen),j=1:length(pen),x=Matrix::diag(Deltac)[pen]^(-0.5)))
       } else{
         pen <- 1:p
         CP1<- diag(1,n)
-        Xpen <- as.matrix(Xc[,pen]%*%sparseMatrix(i=1:length(pen),j=1:length(pen),x=diag(Deltac)[pen]^(-0.5)))
+        Xpen <- as.matrix(Xc[,pen]%*%Matrix::sparseMatrix(i=1:length(pen),j=1:length(pen),x=Matrix::diag(Deltac)[pen]^(-0.5)))
       }
       
       svdX<-svd(Xpen) #X=UDV^T=RV^T
       svdXR<-svdX$u%*%diag(svdX$d) #R=UD
-      L2<-as.matrix(sparseMatrix(i=1:length(pen),j=1:length(pen),x=diag(Deltac)[pen]^(-0.5))%*%svdX$v%*%solve(t(svdXR)%*%svdXR+diag(1,n),t(svdXR)%*%t(CP1)))
+      L2<-as.matrix(Matrix::sparseMatrix(i=1:length(pen),j=1:length(pen),x=Matrix::diag(Deltac)[pen]^(-0.5))%*%svdX$v%*%solve(t(svdXR)%*%svdXR+diag(1,n),t(svdXR)%*%t(CP1)))
       L<-array(0,c(p+intrcpt,n))
       L[pen,]<-L2 #compute only elements corresponding to penalised covariates
       
@@ -732,7 +800,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
       # V1<-sigmahat*apply(L,1,function(x){sum(x^2)})
       # #same as: V <- sigmahat*diag(L%*%R %*% XtXDinv) 
     }else{ #n>p
-      XtXD <- as.matrix(t(Xc)%*%Xc+Deltac)
+      XtXD <- Matrix::as.matrix(t(Xc)%*%Xc+Deltac)
       XtXDinv <- solve(XtXD) #inverting pxp matrix
       L<-XtXDinv %*% t(Xc)
       R<-Xc
@@ -771,18 +839,18 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
       muinitp<- as.vector(c(muhat[,1])%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p 
       muinitp[(1:p)%in%unpen] <- 0
       if(model=="cox"){
-        glmGRtrgt <- glmnet(X,Y,alpha=0,
+        glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
                         lambda = lambda/n*sd_y,family=fml,
                         offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], standardize = F,
                         penalty.factor=penfctr)
       }else if(model=="logistic"){
         intrcpt <- intrcptMoM #reset intercept instead of using logit(p0hat)
-        glmGRtrgt <- glmnet(X,Y,alpha=0,
+        glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
                         lambda = lambda/n*sd_y,family=fml,
                         offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], intercept = intrcpt, standardize = F,
                         penalty.factor=penfctr)
       }else{
-        glmGRtrgt <- glmnet(X,Y,alpha=0,
+        glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
                             lambda = lambda/n/2*sd_y,family=fml,
                             offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], intercept = intrcpt, standardize = F,
                             penalty.factor=penfctr)
@@ -802,7 +870,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
       if(!silent) print(paste("Compute group penalty estimates, iteration ",Itr,"out of maximal ",nIt," iterations."))
     }
     ### Function Method of Moments to compute group weights for (possibly) multiple parameters 
-    MoM <- function(Partitions,hypershrinkage=NaN,groupings.grouplvl=NaN,
+    MoM <- function(Partitions,hypershrinkage=NaN,groupsets.grouplvl=NaN,
                     fixWeightsMu=NaN,fixWeightsTau=NaN,pars){
       #Partitions: vector with index of partitions
       #fixWeightsMu,fixWeightsTau: when fixed group weights for different partitions/co-data are given, 
@@ -841,10 +909,10 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
         ExtraShrinkage2 <- temp[[1]][-1]
         if(grepl("none",hypershrinkage)){
           if(length(Partitions)==1){
-            if(!silent) print(paste("Grouping ",Partitions,": estimate group weights, hypershrinkage type: ",hypershrinkage,sep=""))
+            if(!silent) print(paste("Group set ",Partitions,": estimate group weights, hypershrinkage type: ",hypershrinkage,sep=""))
           }
         }else{
-          if(!silent) print(paste("Grouping ",Partitions,": estimate hyperlambda for ",hypershrinkage," hypershrinkage",sep=""))
+          if(!silent) print(paste("Group set ",Partitions,": estimate hyperlambda for ",hypershrinkage," hypershrinkage",sep=""))
         }
       }
       if(length(G)==1 && G==1){
@@ -862,21 +930,21 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
         # Splits group randomly in half for nsplits times, INDin: one half of the split
         INDin <- lapply(1:m,function(prt){ 
           if(!(prt%in%Partitions)){return(NULL)}else{
-            replicate(nsplits,lapply(groupings[[prt]],function(x){sample(x,floor(length(x)/2),replace=F)}),simplify=F)  
+            replicate(nsplits,lapply(groupsets[[prt]],function(x){sample(x,floor(length(x)/2),replace=F)}),simplify=F)  
           }
-        }) #keep list of m elements such that index same as groupings
+        }) #keep list of m elements such that index same as groupsets
         INDout <- lapply(1:m,function(i){ #for each partition
           if(!(i%in%Partitions)){return(NULL)}else{
           lapply(INDin[[i]],function(indin){ #for each split
-            lapply(1:length(groupings[[i]]),function(x){groupings[[i]][[x]][!(groupings[[i]][[x]]%in%indin[[x]])]})})
+            lapply(1:length(groupsets[[i]]),function(x){groupsets[[i]][[x]][!(groupsets[[i]][[x]]%in%indin[[x]])]})})
           }
         })
-        #INDin[[Partitions]] <- lapply(groupings[Partitions],function(prt){
+        #INDin[[Partitions]] <- lapply(groupsets[Partitions],function(prt){
         #  replicate(nsplits,lapply(prt,function(x){sample(x,floor(length(x)/2),replace=F)}),simplify=F)
         #})
         #INDout <- lapply(Partitions,function(i){ #for each partition
         #  lapply(INDin[[i]],function(indin){ #for each split
-        #    lapply(1:G[i],function(x){groupings[[i]][[x]][!(groupings[[i]][[x]]%in%indin[[x]])]})})
+        #    lapply(1:G[i],function(x){groupsets[[i]][[x]][!(groupsets[[i]][[x]]%in%indin[[x]])]})})
         #})
         
         #-3.3.3|1.1 EB estimate group means ============================================================
@@ -891,15 +959,15 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
               lapply(Partitions,function(i){ #for each partition
                 sapply(1:length(Kg[[i]]),function(j){ #for each group
                   #compute row with gamma_{xy}
-                  x<-groupings[[i]][[j]]
-                  unlist(sapply(Partitions,function(prt){sapply(groupings[[prt]],function(y){sum(L[x,]%*%t(t(R[,y])/Ik[[prt]][y]))/Kg[[i]][j]})}))
+                  x<-groupsets[[i]][[j]]
+                  unlist(sapply(Partitions,function(prt){sapply(groupsets[[prt]],function(y){sum(L[x,]%*%t(t(R[,y])/Ik[[prt]][y]))/Kg[[i]][j]})}))
                 }, simplify="array")
               })
             ),c(sum(G),sum(G)),byrow=T) #reshape to matrix of size sum(G)xsum(G)
             Bmu <- unlist(
               lapply(Partitions,function(i){ #for each partition
                 sapply(1:length(Kg[[i]]),function(j){ #for each group
-                  x<-groupings[[i]][[j]]
+                  x<-groupsets[[i]][[j]]
                   sum(betasinit[x]-muinitp[x]+L[x,]%*%(R[,pen]%*%muinitp[pen]))/Kg[[i]][j]
                 })
               })
@@ -921,7 +989,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                     #compute row with gamma_{xy}
                     x<-INDin[[i]][[split]][[j]]
                     #compute row with gamma_{xy}
-                    unlist(sapply(Partitions,function(prt){sapply(groupings[[prt]],function(y){sum(L[x,]%*%t(t(R[,y])/Ik[[prt]][y]))/Kg[[i]][j]})}))
+                    unlist(sapply(Partitions,function(prt){sapply(groupsets[[prt]],function(y){sum(L[x,]%*%t(t(R[,y])/Ik[[prt]][y]))/Kg[[i]][j]})}))
                   }, simplify="array")
                 })
               ),c(sum(G),sum(G)),byrow=T) %*% diag(1/sdA.mu) #reshape to matrix of size sum(G)xsum(G)
@@ -977,13 +1045,13 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                          muhatin <- rep(NaN,sum(G))
                          muhatin[ind0]<-muhat[ind0] #groups with variance 0 keep same prior parameters
                          if(length(ind0)>0){
-                           glmMuin <- glmnet(A.muinAcc[[i]][indnot0,indnot0],Bmuin[[i]][indnot0]- 
+                           glmMuin <- glmnet::glmnet(A.muinAcc[[i]][indnot0,indnot0],Bmuin[[i]][indnot0]- 
                                                as.matrix(A.muinAcc[[i]][indnot0,ind0],c(length(indnot0),length(ind0)))%*%muhat[ind0],
                                              alpha=0,
                                              lambda = 2*lambda1/length(indnot0)*sd_Bmuin[[i]],family="gaussian",
                                              offset = A.muin[[i]][indnot0,indnot0] %*% mutrgtG[indnot0], intercept = F, standardize = F)
                          }else{
-                           glmMuin <- glmnet(A.muinAcc[[i]][indnot0,indnot0],Bmuin[[i]][indnot0],
+                           glmMuin <- glmnet::glmnet(A.muinAcc[[i]][indnot0,indnot0],Bmuin[[i]][indnot0],
                                              alpha=0,
                                              lambda = 2*lambda1/length(indnot0)*sd_Bmuin[[i]],family="gaussian",
                                              offset = A.muin[[i]][indnot0,indnot0] %*% mutrgtG[indnot0], intercept = F, standardize = F)
@@ -1004,13 +1072,13 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                      ### Fit glmnet for global range of lambda
                      fitMu <- lapply(1:nsplits,function(i){
                        if(length(ind0)>0){
-                         glmMuin <- glmnet(A.muinAcc[[i]][indnot0,indnot0],Bmuin[[i]][indnot0]- 
+                         glmMuin <- glmnet::glmnet(A.muinAcc[[i]][indnot0,indnot0],Bmuin[[i]][indnot0]- 
                                              as.matrix(A.muinAcc[[i]][indnot0,ind0],c(length(indnot0),length(ind0)))%*%muhat[ind0],
                                            alpha=1,family="gaussian",
                                            offset = A.muin[[i]][indnot0,indnot0] %*% mutrgtG[indnot0], intercept = F, standardize = F,
                                            thresh = 1e-10)
                        }else{
-                         glmMuin <- glmnet(A.muinAcc[[i]][indnot0,indnot0],Bmuin[[i]][indnot0],
+                         glmMuin <- glmnet::glmnet(A.muinAcc[[i]][indnot0,indnot0],Bmuin[[i]][indnot0],
                                            alpha=1,family="gaussian",
                                            offset = A.muin[[i]][indnot0,indnot0] %*% mutrgtG[indnot0], intercept = F, standardize = F,
                                            thresh = 1e-10)
@@ -1042,17 +1110,17 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                      #TD: acc or not?
                      #Hierarchical overlapping group estimates for given lambda
                      #no target for mu (shrunk to 0)
-                     #A.muxtnd <- lapply(A.muinAcc,function(X){return(X[,unlist(groupings.grouplvl)])}) #extend matrix such to create artifical non-overlapping groups
-                     A.muxtnd <- lapply(A.muin,function(X){return(X[,unlist(groupings.grouplvl)])}) #extend matrix such to create artifical non-overlapping groups
+                     #A.muxtnd <- lapply(A.muinAcc,function(X){return(X[,unlist(groupsets.grouplvl)])}) #extend matrix such to create artifical non-overlapping groups
+                     A.muxtnd <- lapply(A.muin,function(X){return(X[,unlist(groupsets.grouplvl)])}) #extend matrix such to create artifical non-overlapping groups
                      #create new group indices for Axtnd
-                     Kg2 <- c(1,sapply(groupings.grouplvl,length)) #group sizes on group level (1 added to easily compute hier. group numbers)
+                     Kg2 <- c(1,sapply(groupsets.grouplvl,length)) #group sizes on group level (1 added to easily compute hier. group numbers)
                      G2 <- length(Kg2)-1
                      groupxtnd <- lapply(2:length(Kg2),function(i){sum(Kg2[1:(i-1)]):(sum(Kg2[1:i])-1)}) #list of indices in each group
                      groupxtnd2 <- unlist(sapply(1:G2,function(x){rep(x,Kg2[x+1])})) #vector with group number
                      
                      ### Fit gglasso for global range of lambda
                      fit1<-lapply(1:nsplits,function(i){
-                       gglasso(x=A.muxtnd[[i]],y=Bmuin[[i]],group = groupxtnd2, loss="ls", 
+                       gglasso::gglasso(x=A.muxtnd[[i]],y=Bmuin[[i]],group = groupxtnd2, loss="ls", 
                                intercept = F, pf = rep(1,G2))
                      })
                      rangelambda1 <- log(range(sapply(fit1,function(i){range(i$lambda)})))
@@ -1065,7 +1133,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                          vtilde <- coef(fit1[[i]],s=lambda1)[-1]
                          v<-lapply(groupxtnd,function(g){
                            x<-rep(0,G)
-                           x[unlist(groupings.grouplvl)[g]]<-x[unlist(groupings.grouplvl)[g]]+vtilde[g]
+                           x[unlist(groupsets.grouplvl)[g]]<-x[unlist(groupsets.grouplvl)[g]]+vtilde[g]
                            return(x)
                          })
                          muhatin <- Wminhalf %*% c(apply(array(unlist(v),c(G,G2)),1,sum))
@@ -1108,7 +1176,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                        sd_Bmu <- sqrt(var(Bmu[indnot0] - as.matrix(A.mu[indnot0,ind0],c(length(indnot0),length(ind0)))%*%muhat[ind0]
                                           -as.matrix(A.mu[indnot0,indnot0],c(length(indnot0),length(ind0))) %*% mutrgtG[indnot0])*(length(indnot0)-1)/length(indnot0))[1]
                        #ridge estimate for group means
-                       glmMu <- glmnet(A.muAcc[indnot0,indnot0],Bmu[indnot0]-
+                       glmMu <- glmnet::glmnet(A.muAcc[indnot0,indnot0],Bmu[indnot0]-
                                          as.matrix(A.muAcc[indnot0,ind0],c(length(indnot0),length(ind0)))%*%muhat[ind0],alpha=0,
                                        lambda = 2*lambdashat[1]/length(indnot0)*sd_Bmu,family="gaussian",
                                        offset = A.mu[indnot0,indnot0] %*% mutrgtG[indnot0], intercept = F, standardize = F)
@@ -1116,7 +1184,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                        sd_Bmu <- sqrt(var(Bmu[indnot0]
                                           -as.matrix(A.mu[indnot0,indnot0],c(length(indnot0),length(ind0))) %*% mutrgtG[indnot0])*(length(indnot0)-1)/length(indnot0))[1]
                        #ridge estimate for group means
-                       glmMu <- glmnet(A.muAcc[indnot0,indnot0],Bmu[indnot0],alpha=0,
+                       glmMu <- glmnet::glmnet(A.muAcc[indnot0,indnot0],Bmu[indnot0],alpha=0,
                                        lambda = 2*lambdashat[1]/length(indnot0)*sd_Bmu,family="gaussian",
                                        offset = A.mu[indnot0,indnot0] %*% mutrgtG[indnot0], intercept = F, standardize = F)
                      }
@@ -1129,12 +1197,12 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                      A.muAcc <- A.mu %*% Wminhalf
                      #ridge estimate for group means
                      if(length(ind0)>0){
-                       glmMu <- glmnet(A.muAcc[indnot0,indnot0],Bmu[indnot0]-
+                       glmMu <- glmnet::glmnet(A.muAcc[indnot0,indnot0],Bmu[indnot0]-
                                          as.matrix(A.muAcc[indnot0,ind0],c(length(indnot0),length(ind0)))%*%muhat[ind0],
                                        alpha=1,family="gaussian",
                                        offset = A.mu[indnot0,indnot0] %*% mutrgtG[indnot0], intercept = F, standardize = F)
                      }else{
-                       glmMu <- glmnet(A.muAcc[indnot0,indnot0],Bmu[indnot0],
+                       glmMu <- glmnet::glmnet(A.muAcc[indnot0,indnot0],Bmu[indnot0],
                                        alpha=1,family="gaussian",
                                        offset = A.mu[indnot0,indnot0] %*% mutrgtG[indnot0], intercept = F, standardize = F)
                      }
@@ -1147,21 +1215,21 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                      #Hierarchical overlapping group estimates for given lambda
                      #no target for mu (shrunk to 0)
                      #A.muAcc <- A.mu %*% Wminhalf
-                     #A.muxtnd <- A.muAcc[,unlist(groupings.grouplvl)] #extend matrix such to create artifical non-overlapping groups
-                     A.muxtnd <- A.mu[,unlist(groupings.grouplvl)] #extend matrix such to create artifical non-overlapping groups
+                     #A.muxtnd <- A.muAcc[,unlist(groupsets.grouplvl)] #extend matrix such to create artifical non-overlapping groups
+                     A.muxtnd <- A.mu[,unlist(groupsets.grouplvl)] #extend matrix such to create artifical non-overlapping groups
                      #create new group indices for Axtnd
-                     Kg2 <- c(1,sapply(groupings.grouplvl,length)) #group sizes on group level (1 added to easily compute hier. group numbers)
+                     Kg2 <- c(1,sapply(groupsets.grouplvl,length)) #group sizes on group level (1 added to easily compute hier. group numbers)
                      G2 <- length(Kg2)-1
                      groupxtnd <- lapply(2:length(Kg2),function(i){sum(Kg2[1:(i-1)]):(sum(Kg2[1:i])-1)}) #list of indices in each group
                      groupxtnd2 <- unlist(sapply(1:G2,function(x){rep(x,Kg2[x+1])})) #vector with group number
                      
                      #Hierarchical group lasso estimate for group variances
-                     fit1<-gglasso(x=A.muxtnd,y=Bmu,group = groupxtnd2, loss="ls", 
+                     fit1<-gglasso::gglasso(x=A.muxtnd,y=Bmu,group = groupxtnd2, loss="ls", 
                                    intercept = F, pf = rep(1,G2),lambda=lambdashat[1])
                      vtilde <- coef(fit1,s=lambdashat[1])[-1]
                      v<-lapply(groupxtnd,function(g){
                        x<-rep(0,G)
-                       x[unlist(groupings.grouplvl)[g]]<-x[unlist(groupings.grouplvl)[g]]+vtilde[g]
+                       x[unlist(groupsets.grouplvl)[g]]<-x[unlist(groupsets.grouplvl)[g]]+vtilde[g]
                        return(x)
                      })
                      muhat <- Wminhalf %*% c(apply(array(unlist(v),c(G,G2)),1,sum))
@@ -1193,7 +1261,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                 sapply(1:length(Kg[[i]]),function(j){ #for each group
                   if(j%in%ind0) return(NaN)
                   #compute row with gamma_{xy}
-                  x<-groupings[[i]][[j]]
+                  x<-groupsets[[i]][[j]]
                   x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
                   sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%
                         (muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=T)/Kg[[i]][j]
@@ -1206,10 +1274,10 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                 sapply(1:length(Kg[[i]]),function(j){ #for each group
                   if(j%in%ind0) return(rep(NaN,sum(G)))
                   #compute row with gamma_{xy}
-                  x<-groupings[[i]][[j]]
+                  x<-groupsets[[i]][[j]]
                   x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
                   #compute row with gamma_{xy}
-                  unlist(sapply(Partitions,function(prt){sapply(groupings[[prt]],function(y){
+                  unlist(sapply(Partitions,function(prt){sapply(groupsets[[prt]],function(y){
                     y<-setdiff(y,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
                     sum(t(c(1/V[x])*L[x,])%*%L[x,]*(R[,y]%*%(t(R[,y])/c(Ik[[prt]][y])*c(tauglobal[datablockNo[y]]))),na.rm=T)/Kg[[i]][j]
                   })}))
@@ -1249,11 +1317,11 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                 itr2 <- itr2 + 1
                 indNewSplits <- which(!checkSplit) #index of splits that have to be resampled
                 #resample split
-                INDin[[Partitions]][indNewSplits] <- replicate(length(indNewSplits),lapply(groupings[[Partitions]],
+                INDin[[Partitions]][indNewSplits] <- replicate(length(indNewSplits),lapply(groupsets[[Partitions]],
                                                                function(x){sample(x,floor(length(x)/2),replace=F)}),simplify=F)  
                 INDout[[Partitions]][indNewSplits] <- lapply(INDin[[Partitions]][indNewSplits],function(indin){ #for each split
-                  lapply(1:length(groupings[[Partitions]]),
-                         function(x){groupings[[Partitions]][[x]][!(groupings[[Partitions]][[x]]%in%indin[[x]])]})})
+                  lapply(1:length(groupsets[[Partitions]]),
+                         function(x){groupsets[[Partitions]][[x]][!(groupsets[[Partitions]][[x]]%in%indin[[x]])]})})
               }
             }
             if(itr2==51) warning("Check splits")
@@ -1267,7 +1335,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                     x<-INDin[[i]][[split]][[j]]
                     x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
                     #compute row with gamma_{xy}
-                    unlist(sapply(Partitions,function(prt){sapply(groupings[[prt]],function(y){
+                    unlist(sapply(Partitions,function(prt){sapply(groupsets[[prt]],function(y){
                       y<-setdiff(y,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
                       sum(t(c(1/V[x])*L[x,])%*%L[x,]*(R[,y]%*%(t(R[,y])/c(Ik[[prt]][y])*c(tauglobal[datablockNo[y]]))),na.rm=T)/Kg[[i]][j]
                     })}))
@@ -1320,7 +1388,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                        gammas <- rep(0,G)
                        Aacc <- A %*% (Wminhalf * meanWhalf)
                        #ridge estimate for group variances
-                       glmTau <- glmnet(Aacc[indnot0,indnot0],Btau[indnot0],alpha=0,
+                       glmTau <- glmnet::glmnet(Aacc[indnot0,indnot0],Btau[indnot0],alpha=0,
                                           lambda = 2*lambda2/length(indnot0)*sd_Btau,family="gaussian",
                                           offset = Aacc[indnot0,indnot0] %*% gammatrgtG[indnot0], intercept = F, standardize = F)
                        gammas[indnot0] <- (Wminhalf[indnot0,indnot0]*meanWhalf) %*% as.vector(glmTau$beta) + gammatrgtG[indnot0] 
@@ -1336,7 +1404,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                          gammain <- rep(NaN,sum(G))
                          gammain[ind0] <- 0
                          #ridge estimate for group variances
-                         glmTauin <- glmnet(AinAcc[[i]][indnot0,indnot0],Btauin[[i]][indnot0],alpha=0,
+                         glmTauin <- glmnet::glmnet(AinAcc[[i]][indnot0,indnot0],Btauin[[i]][indnot0],alpha=0,
                                             lambda = 2*lambda2/length(indnot0)*sd_Btauin[[i]],family="gaussian",
                                             offset = Ain[[i]][indnot0,indnot0] %*% gammatrgtG[indnot0], intercept = F, standardize = F)
                          gammain[indnot0] <- Wminhalf[indnot0,indnot0] %*% as.vector(glmTauin$beta) + gammatrgtG[indnot0] 
@@ -1359,7 +1427,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                        
                        #ridge estimate for group variances with fused penalty for overlapping groups
                        dat<-list(Y=Btau[indnot0],X=A[indnot0,indnot0])
-                       gamTau <- gam(Y~ 0 + X, data=dat,
+                       gamTau <- mgcv::gam(Y~ 0 + X, data=dat,
                                        family="gaussian",offset = A[indnot0,indnot0] %*% gammatrgtG[indnot0],
                                        paraPen=list(X=list(S1=PenGrps,sp=lambda2)))
                        gammas[indnot0] <- gamTau$coefficients + gammatrgtG[indnot0]
@@ -1376,7 +1444,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                          gammain[ind0] <- 0
                          #ridge estimate for group variances
                          dat<-list(Y=Btauin[[i]][indnot0],X=Ain[[i]][indnot0,indnot0])
-                         gamTauin <- gam(Y~ 0 + X, data=dat,
+                         gamTauin <- mgcv::gam(Y~ 0 + X, data=dat,
                                          family="gaussian",offset = Ain[[i]][indnot0,indnot0] %*% gammatrgtG[indnot0],
                                          paraPen=list(X=list(S1=PenGrps,sp=lambda2)))
                          gammain[indnot0] <- gamTauin$coefficients + gammatrgtG[indnot0]
@@ -1394,7 +1462,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                      meanWhalf <- mean(diag(Wminhalf)^-1)
                      ### Fit glmnet lasso for global range of lambda
                      fitTau <- lapply(1:nsplits,function(i){
-                       glmTauin <- glmnet(AinAcc[[i]][indnot0,indnot0]*meanWhalf,Btauin[[i]][indnot0],
+                       glmTauin <- glmnet::glmnet(AinAcc[[i]][indnot0,indnot0]*meanWhalf,Btauin[[i]][indnot0],
                                           alpha=1,family="gaussian",
                                           intercept = F, standardize = F,
                                           thresh=1e-6)
@@ -1404,7 +1472,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                      gammas <- function(lambda2){
                        gammas <- rep(0,G)
                        Aacc <- A %*% (Wminhalf * meanWhalf)
-                       glmTau <- glmnet(Aacc[indnot0,indnot0],Btau[indnot0],
+                       glmTau <- glmnet::glmnet(Aacc[indnot0,indnot0],Btau[indnot0],
                                         alpha=1,family="gaussian",
                                         intercept = F, standardize = F)
                        coefTau <- coef(glmTau,s=lambda2,exact=T,
@@ -1437,10 +1505,10 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                      #Hierarchical overlapping group estimates for given lambda
                      #no target for tau (shrunk to 0)
                      #remove groups that are already set to 0
-                     if(length(groupings.grouplvl)!=length(indnot0)){
-                       INDgrps2 <- lapply(groupings.grouplvl[indnot0],function(x){x[x%in%indnot0]})
+                     if(length(groupsets.grouplvl)!=length(indnot0)){
+                       INDgrps2 <- lapply(groupsets.grouplvl[indnot0],function(x){x[x%in%indnot0]})
                      }else{
-                       INDgrps2 <- groupings.grouplvl
+                       INDgrps2 <- groupsets.grouplvl
                      }
                      
                      #Axtnd <- lapply(AinAcc,function(A){return(A[indnot0,unlist(INDgrps2),drop=F])}) #extend matrix such to create artifical non-overlapping groups
@@ -1453,7 +1521,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                      
                      ### Fit gglasso for global range of lambda
                      fit2<-lapply(1:nsplits,function(i){
-                       gglasso(x=Axtnd[[i]],y=Btauin[[i]][indnot0],group = groupxtnd2, loss="ls",
+                       gglasso::gglasso(x=Axtnd[[i]],y=Btauin[[i]][indnot0],group = groupxtnd2, loss="ls",
                                intercept = F, pf = rep(1,G2))
                      })
                      #rangelambda2 <- range(sapply(fit2,function(i){range(i$lambda)}))
@@ -1470,7 +1538,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                        groupxtnd2 <- unlist(sapply(1:G2,function(x){rep(x,Kg2[x+1])})) #vector with group number
                        
                        #Hierarchical group lasso estimate for group variances
-                       fit2<-gglasso(x=Axtnd,y=Btau[indnot0],group = groupxtnd2, loss="ls",
+                       fit2<-gglasso::gglasso(x=Axtnd,y=Btau[indnot0],group = groupxtnd2, loss="ls",
                                      intercept = F, pf = rep(1,G2),lambda=lambda2)
                        gamma <- rep(0,sum(G))
                        vtilde <- coef(fit2,s=lambdashat[2])[-1]
@@ -1521,7 +1589,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                        gammas <- rep(0,G)
                        Aacc <- A %*% (Wminhalf * meanWhalf)
                        initSelected <- initgamma[indnot0]
-                       fitTau <- solnp(par = initSelected, fun=penMSE, b=Btau[indnot0],
+                       fitTau <- Rsolnp::solnp(par = initSelected, fun=penMSE, b=Btau[indnot0],
                                        A=Aacc[indnot0,indnot0], lam=lambda2,
                                        LB = rep(0,length(indnot0)),control=list(trace=0))
                        gammas[indnot0] <- (Wminhalf[indnot0,indnot0] *meanWhalf) %*%as.vector(fitTau$pars)
@@ -1537,7 +1605,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                          gammain[ind0] <- 0
              
                          Ainacc <- Ain[[i]]%*%(Wminhalf * meanWhalf)
-                         fitTauin <- solnp(par = initgamma[indnot0], fun=penMSE, b=Btauin[[i]][indnot0],
+                         fitTauin <- Rsolnp::solnp(par = initgamma[indnot0], fun=penMSE, b=Btauin[[i]][indnot0],
                                            A=Ainacc[indnot0,indnot0],lam=lambda2,
                                            LB = rep(0,length(indnot0)),control=list(trace=0))
                          gammain[indnot0] <- (Wminhalf[indnot0,indnot0] * meanWhalf) %*% as.vector(fitTauin$pars)
@@ -1560,10 +1628,10 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                      gammas <- function(lambda2){
                        #gammas <- rep(0,sum(G))
                        initSelected <- initgamma[indnot0]
-                       fitTau <- solnp(par = initSelected, fun=penMSE, b=Btau[indnot0], 
+                       fitTau <- Rsolnp::solnp(par = initSelected, fun=penMSE, b=Btau[indnot0], 
                                          A=A[indnot0,indnot0], lam=lambda2,
-                                         LB = rep(0,length(indnot)),control=list(trace=0))
-                       gammain[indnot0] <- as.vector(fitTauin$pars)
+                                         LB = rep(0,length(indnot0)),control=list(trace=0))
+                       gammain[indnot0] <- as.vector(fitTau$pars)
                        return(gammain)
                      }
                      
@@ -1574,7 +1642,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                          gammain <- rep(0,sum(G))
                          
                          initSelected <- initgamma[indnot0]
-                         fitTauin <- solnp(par = initSelected, fun=penMSE, b=Btauin[[i]][indnot0], 
+                         fitTauin <- Rsolnp::solnp(par = initSelected, fun=penMSE, b=Btauin[[i]][indnot0], 
                                            A=Ain[[i]][indnot0,indnot0], lam=lambda2,
                                            LB = rep(0,length(indnot0)),control=list(trace=0))
                          gammain[indnot0] <- as.vector(fitTauin$pars)
@@ -1606,7 +1674,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                        gammas <- rep(0,G)
                        Aacc <- A %*% (Wminhalf * meanWhalf)
                        initSelected <- initgamma[indnot0]
-                       fitTau <- solnp(par = initSelected, fun=penMSE, b=Btau[indnot0],
+                       fitTau <- Rsolnp::solnp(par = initSelected, fun=penMSE, b=Btau[indnot0],
                                        A=Aacc[indnot0,indnot0], lam=lambda2,
                                        LB = rep(0,length(indnot0)),control=list(trace=0))
                        gammas[indnot0] <- (Wminhalf[indnot0,indnot0] *meanWhalf) %*%as.vector(fitTau$pars)
@@ -1621,7 +1689,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                          gammain <- rep(NaN,sum(G))
                          gammain[ind0] <- 0
                          initSelected <- initgamma[indnot0]
-                         fitTauin <- solnp(par = initSelected, fun=penMSE, b=Btauin[[i]][indnot0],
+                         fitTauin <- Rsolnp::solnp(par = initSelected, fun=penMSE, b=Btauin[[i]][indnot0],
                                            A=Ainacc[indnot0,indnot0],lam=lambda2,
                                            LB = rep(0,length(indnot0)),control=list(trace=0))
                          gammain[indnot0] <- (Wminhalf[indnot0,indnot0] *meanWhalf)%*%as.vector(fitTauin$pars)
@@ -1643,7 +1711,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                      #MSE penalised by inverse gamma penalty
                      penMSE <- function(gamma,b,A,lam){ 
                        Kg <- diag(Wminhalf)^(-2) #group sizes
-                       prmsIG<-prmsIGMode1(lam,Kg)
+                       prmsIG<-.prmsIGMode1(lam,Kg)
                        alphaIG <- prmsIG[[1]]
                        betaIG<-prmsIG[[2]] * diag(Wminhalf)^(-1)/meanWhalf
                        
@@ -1655,7 +1723,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                        gammas <- rep(0,G)
                        Aacc <- A %*% (Wminhalf * meanWhalf)
                        initSelected <- initgamma[indnot0]
-                       fitTau <- solnp(par = initSelected, fun=penMSE, b=Btau[indnot0],
+                       fitTau <- Rsolnp::solnp(par = initSelected, fun=penMSE, b=Btau[indnot0],
                                        A=Aacc[indnot0,indnot0], lam=lambda2,
                                        LB = rep(0,length(indnot0)),control=list(trace=0))
                        gammas[indnot0] <- (Wminhalf[indnot0,indnot0] *meanWhalf) %*%as.vector(fitTau$pars)
@@ -1670,7 +1738,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                          gammain <- rep(NaN,sum(G))
                          gammain[ind0] <- 0
                          initSelected <- initgamma[indnot0]
-                         fitTauin <- solnp(par = initSelected, fun=penMSE, b=Btauin[[i]][indnot0],
+                         fitTauin <- Rsolnp::solnp(par = initSelected, fun=penMSE, b=Btauin[[i]][indnot0],
                                            A=Ainacc[indnot0,indnot0],lam=lambda2,
                                            LB = rep(0,length(indnot0)),control=list(trace=0))
                          gammain[indnot0] <- (Wminhalf[indnot0,indnot0] *meanWhalf)%*%as.vector(fitTauin$pars)
@@ -1686,14 +1754,14 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                    "gamma+positive"={
                      #define function for MSE penalised with gamma prior with mean 1
                      spike<-0.001
-                     penMSE <- function(gamma2,b,A,lam){ 
+                     penMSE <- function(gamma,b,A,lam){ 
                        #logLikeInvGamma <- sapply(gamma,function(x){logdinvgamma(x,alp=lam,bet=lam-1)})
-                       logLikeGamma <- sapply(gamma2,function(x){
+                       logLikeGamma <- sapply(gamma,function(x){
                          #return(lam*log(lam)-log(gamma(lam))+(lam-1)*log(x)-lam*x)
                          if(x==0) return(log(spike))
                          return(log(1-spike)+(lam-1)*log(x)-lam*x)
                        })
-                       return(sum((b-A%*%gamma2)^2) - sum(logLikeGamma) ) }
+                       return(sum((b-A%*%gamma)^2) - sum(logLikeGamma) ) }
                      #eqfun2 <- function(gamma,b,A,lam)  return(sum(t(Zt[indnot0,])%*%(Wminhalf[indnot0,indnot0]%*%gamma))/length(pen) ) #equality constraint for average prior variance
                      
                      RSSlambdatau <- function(lambda2){
@@ -1706,7 +1774,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                        #Ainacc <- Ain[[i]]%*%Wminhalf
                        gammain1 <- rep(NaN,sum(G))
                        gammain1[ind0] <- 0
-                       fitTauin1 <- solnp(par = initgamma, fun=penMSE, b=Btauin[[i]][indnot0], 
+                       fitTauin1 <- Rsolnp::solnp(par = initgamma, fun=penMSE, b=Btauin[[i]][indnot0], 
                                           A=Ain[[i]][indnot0,indnot0],lam=lambda2,
                                           LB = rep(0,G), eqfun=eqfun, eqB = 1,control=list(trace=0))
                        #gammain1[indnot0] <- Wminhalf%*%as.vector(fitTauin1$pars)
@@ -1716,7 +1784,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                          #Ainacc <- Ain[[i]]%*%Wminhalf
                          gammain <- rep(NaN,sum(G))
                          gammain[ind0] <- 0
-                         fitTauin <- solnp(par = initgamma, fun=penMSE, b=Btauin[[i]][indnot0], 
+                         fitTauin <- Rsolnp::solnp(par = initgamma, fun=penMSE, b=Btauin[[i]][indnot0], 
                                            A=Ain[[i]][indnot0,indnot0],lam=lambda2,
                                            LB = rep(0,G), eqfun=eqfun, eqB = 1,control=list(trace=0))
                          #gammain[indnot0] <- Wminhalf%*%as.vector(fitTauin$pars)
@@ -1761,7 +1829,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
             lambdashat[2] <- lambdas[minFRSS]
             if(profplotRSS){ #profile plot lambda vs RSS
               profPlot <- plot(log10(lambdas),FRSS,xlab="hyperlambda (log10-scale)",ylab="RSS",
-                               main=paste("Grouping ",Partitions,", ",hypershrinkage," hypershrinkage",sep=""))
+                               main=paste("Group set ",Partitions,", ",hypershrinkage," hypershrinkage",sep=""))
               abline(v=log10(lambdas[minFRSS]),col="red")
               if(!silent) print(paste("Estimated hyperlambda: ",lambdashat[2],sep=""))
             }    
@@ -1774,7 +1842,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
         
           #-3.3.3|1.2.4 Compute group variance estimates for optimised hyperpenalty lambda ##############
           if(length(ExtraShrinkage2)==0){
-            if(!silent) print(paste("Estimate group weights of grouping ",Partitions,sep=""))
+            if(!silent) print(paste("Estimate group weights of group set ",Partitions,sep=""))
           }
           if(lambdashat[2]==0){
             gammatilde[indnot0] <- solve(A[indnot0,indnot0],Btau[indnot0])
@@ -1784,7 +1852,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
             gamma <- pmax(0,gammatilde)
             
             if(length(ExtraShrinkage2)>0){
-              if(!silent) print(paste("Select groups of grouping ",Partitions,sep=""))
+              if(!silent) print(paste("Select groups of group set ",Partitions,sep=""))
               if(all(gammatilde==0)){ #none selected
                 gamma <- rep(0,G)
                 gamma[indnot0] <- 1
@@ -1829,15 +1897,15 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
             lapply(Partitions,function(i){ #for each partition
               sapply(1:length(Kg[[i]]),function(j){ #for each group
                 #compute row with gamma_{xy}
-                x<-groupings[[i]][[j]]
-                unlist(sapply(Partitions,function(prt){sapply(groupings[[prt]],function(y){sum(L[x,]%*%t(t(R[,y])/Ik[[prt]][y])%*%diag(betaold[y]))/Kg[[i]][j]})}))
+                x<-groupsets[[i]][[j]]
+                unlist(sapply(Partitions,function(prt){sapply(groupsets[[prt]],function(y){sum(L[x,]%*%t(t(R[,y])/Ik[[prt]][y])%*%diag(betaold[y]))/Kg[[i]][j]})}))
               }, simplify="array")
             })
           ),c(sum(G),sum(G)),byrow=T) #reshape to matrix of size sum(G)xsum(G)
           Bmu <- unlist(
             lapply(Partitions,function(i){ #for each partition
               sapply(1:length(Kg[[i]]),function(j){ #for each group
-                x<-groupings[[i]][[j]]
+                x<-groupsets[[i]][[j]]
                 sum(betasinit[x]-muinitp[x]+L[x,]%*%(R[,pen]%*%muinitp[pen]))/Kg[[i]][j]
               })
             })
@@ -1892,7 +1960,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
             lapply(Partitions,function(i){ #for each partition
               sapply(1:length(Kg[[i]]),function(j){ #for each group
                 #compute row with gamma_{xy}
-                x<-groupings[[i]][[j]]
+                x<-groupsets[[i]][[j]]
                 x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
                 sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=T)/Kg[[i]][j]
                 #sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1)/Kg[[i]][j]
@@ -1903,10 +1971,10 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
             lapply(Partitions,function(i){ #for each partition
               sapply(1:length(Kg[[i]]),function(j){ #for each group
                 #compute row with gamma_{xy}
-                x<-groupings[[i]][[j]]
+                x<-groupsets[[i]][[j]]
                 x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
                 #compute row with gamma_{xy}
-                unlist(sapply(Partitions,function(prt){sapply(groupings[[prt]],function(y){
+                unlist(sapply(Partitions,function(prt){sapply(groupsets[[prt]],function(y){
                   y<-setdiff(y,zeroV)
                   sum(t(c(1/V[x])*L[x,])%*%L[x,]*(R[,y]%*%(t(R[,y])/c(Ik[[prt]][y])*c(tauglobal[datablockNo[y]]))),na.rm=T)/Kg[[i]][j]
                 })}))
@@ -1920,7 +1988,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
               #Aacc <- A%*%Wminhalf
               
               gamma <- rep(0,G)
-              fitTau <- solnp(par = rep(1,length(indnot0)), fun=penMSE, b=Btau[indnot0],
+              fitTau <- Rsolnp::solnp(par = rep(1,length(indnot0)), fun=penMSE, b=Btau[indnot0],
                               A=A[indnot0,indnot0],
                               LB = rep(0,length(indnot0)),control=list(trace=0))
               gamma[indnot0] <- as.vector(fitTau$pars)
@@ -1937,7 +2005,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
             }
             if(any(is.nan(gamma))){warning("NaN in group variance")}
           }else{ #compute partition weights/co-data weights
-            if(!silent) print("Estimate grouping weights")
+            if(!silent) print("Estimate group set weights")
             weightsPart <- sqrt(G[Partitions])
             weightMatrixTau <- matrix(rep(0,sum(G)*length(G)),sum(G),length(G))
             for(i in 1:length(G)){
@@ -1951,43 +2019,43 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                 ind0 <- union(ind0,set0)
                 indnot0 <- setdiff(indnot0,set0)
               }
+              
               Atilde <- A[indnot0,indnot0]%*%weightMatrixTau[indnot0,partWeightsTau[,Itr]!=0] 
               
               #Three options to solve for partition weights (use only one):
               #Solve for tau and truncate negative values to 0
-              if(1){
-                gammatilde<-rep(0,m)
+              gammatilde<-rep(0,m)
+              temp<-try(solve(t(Atilde)%*%Atilde,t(Atilde)%*%c(Btau[indnot0])),silent=T)
+              if(class(temp)[1]=="try-error"){
+                #solve for w\in[0,1] with convex optimisation package when Atilde is computationally singular
+                #library(CVXR)
+                D<-length(G)
+                w <- CVXR::Variable(D)
+                objective <- CVXR::Minimize(sum((Atilde%*%w-c(Btau[indnot0]))^2))
+                constraint1 <- diag(rep(1,D))%*%w >= 0
+                constraint2 <-  matrix(rep(1,D), nrow = 1)%*%w ==1
+                problem <- CVXR::Problem(objective,constraints = list(constraint1, constraint2))
+                result <- solve(problem)
+                gammatilde <- c(result$getValue(w))
+                gamma <- pmax(0,gammatilde) #correct round-off errors: partition/co-data weights
+              }else{
                 gammatilde[partWeightsTau[,Itr]!=0] <- solve(t(Atilde)%*%Atilde,t(Atilde)%*%c(Btau[indnot0]))
                 gamma <- pmax(0,gammatilde)
                 #temp<-optim(gamma,function(x){sum((Atilde%*%x-c(Btau[indnot0]))^2)},lower=rep(0,length(gamma)),method="L-BFGS-B")
                 #gamma<-temp$par 
               }
               
-              #solve for w\in[0,1] with convex optimisation package
-              #library(CVXR)
-              if(0){
-                D<-length(G)
-                w <- Variable(D)
-                objective <- Minimize(sum((Atilde%*%w-c(Btau[indnot0]))^2))
-                constraint1 <- diag(rep(1,D))%*%w >= 0
-                constraint2 <-  matrix(rep(1,D), nrow = 1)%*%w ==1
-                problem <- Problem(objective,constraints = list(constraint1, constraint2))
-                result <- solve(problem)
-                gammatilde <- c(result$getValue(w))
-                gamma <- pmax(0,gammatilde) #correct round-off errors: partition/co-data weights
-              }
-              
-              #Solve for tau>=0 with convex optimisation package, and normalise to 1
-              if(0){
-                D<-length(G)
-                w <- Variable(D)
-                objective <- Minimize(sum((Atilde%*%w-c(Btau[indnot0]))^2))
-                constraint1 <- diag(rep(1,D))%*%w >= 0
-                problem <- Problem(objective,constraints = list(constraint1))
-                result <- solve(problem)
-                gamma <- c(result$getValue(w))
-                gammatilde <- gamma
-              }
+              # #Solve for tau>=0 with convex optimisation package, and normalise to 1
+              # if(0){
+              #   D<-length(G)
+              #   w <- CVXR::Variable(D)
+              #   objective <- CVXR::Minimize(sum((Atilde%*%w-c(Btau[indnot0]))^2))
+              #   constraint1 <- diag(rep(1,D))%*%w >= 0
+              #   problem <- CVXR::Problem(objective,constraints = list(constraint1))
+              #   result <- solve(problem)
+              #   gamma <- c(result$getValue(w))
+              #   gammatilde <- gamma
+              # }
               
               if(normalise){
                 gammatilde <- gammatilde/sum(gamma)
@@ -2012,7 +2080,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     #NOTE: possible to use different penalty functions
     MoMGroupRes <- lapply(1:m,function(i){
       if(partWeightsTau[i,Itr]!=0){
-        MoM(Partitions=i,hypershrinkage=hypershrinkage[i],groupings.grouplvl=groupings.grouplvl[[i]])
+        MoM(Partitions=i,hypershrinkage=hypershrinkage[i],groupsets.grouplvl=groupsets.grouplvl[[i]])
       }else{
         return(list(muhat = muhat[indGrpsGlobal[[i]],Itr],
                     gammatilde = gammatilde[indGrpsGlobal[[i]],Itr],
@@ -2129,16 +2197,16 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
       if(any(is.nan(sqrt(lambdap[pen])))){browser()}
       lambdaoverall <- exp(mean(log(sigmahat/tauglobal[datablockNo[pen]])))
       Xacc <- X
-      Xacc[,pen] <- as.matrix(X[,pen] %*% sparseMatrix(i=1:length(pen),j=1:length(pen),
+      Xacc[,pen] <- as.matrix(X[,pen] %*% Matrix::sparseMatrix(i=1:length(pen),j=1:length(pen),
                                                        x=c(1/sqrt(lambdap[pen]/lambdaoverall))))
       
       if(model=="cox"){
-        glmGR <- glmnet(Xacc,Y,alpha=0,
+        glmGR <- glmnet::glmnet(Xacc,Y,alpha=0,
                         lambda = lambdaoverall/n*sd_y2,family=fml,
                         offset = X[,!((1:p)%in%unpen)] %*% muhatp[!((1:p)%in%unpen)], standardize = F,
                         penalty.factor=penfctr, thresh=10^-10)
       }else{
-        glmGR <- glmnet(Xacc,Y,alpha=0,
+        glmGR <- glmnet::glmnet(Xacc,Y,alpha=0,
                         lambda = lambdaoverall/n*sd_y2,family=fml,
                         offset = X[,!((1:p)%in%unpen)] %*% muhatp[!((1:p)%in%unpen)], intercept = intrcpt, standardize = F,
                         penalty.factor=penfctr, thresh=10^-10)
@@ -2205,7 +2273,7 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
                             postselection=postselection,maxsel=maxsel, 
                             penalties=lambdap,model=model,tauglobal=sigmahat/lambdaoverall,
                             sigmahat=sigmahat,muhatp=muhatp, 
-                            X2=X2,Y2=Y2)
+                            X2=X2,Y2=Y2,silent=silent)
     
   }
   
@@ -2214,14 +2282,14 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
   if(!is.nan(compare) & compare){
     lambdaoverall <- exp(mean(log(lambdaridge[datablockNo[pen]])))
     Xacc <- X
-    Xacc[,pen] <- as.matrix(X[,pen] %*% sparseMatrix(i=1:length(pen),j=1:length(pen),
+    Xacc[,pen] <- as.matrix(X[,pen] %*% Matrix::sparseMatrix(i=1:length(pen),j=1:length(pen),
                                                      x=c(1/sqrt(lambdaridge[datablockNo[pen]]/lambdaoverall))))
     if(model=="cox"){
-      glmR <- glmnet(Xacc,Y,family=fml,alpha=0,
+      glmR <- glmnet::glmnet(Xacc,Y,family=fml,alpha=0,
                      lambda=lambdaoverall*sd_y/n,standardize = F,
                      penalty.factor=penfctr)
     }else{
-      glmR <- glmnet(X,Y,family=fml,alpha=0,
+      glmR <- glmnet::glmnet(X,Y,family=fml,alpha=0,
                      lambda=lambdaoverall*sd_y/n,standardize = F,intercept=intrcptGLM,
                      penalty.factor=penfctr)
     }
@@ -2258,9 +2326,9 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     tauglobal=tauglobal, #overall tauglobal
     gammatilde = gammatilde[,nIt+1], #EB estimated prior group variance before truncating
     gamma=gamma[,nIt+1], #group weights variance
-    w = partWeightsTau[,nIt+1], #grouping weights in local variances
+    w = partWeightsTau[,nIt+1], #group set weights in local variances
     penalties = lambdap, #penalty parameter on all p covariates
-    hyperlambdas = lambdashat[2,nIt+1,], #hyperpenalties for all groupings
+    hyperlambdas = lambdashat[2,nIt+1,], #hyperpenalties for all group sets
     #weights = weights, #weights used in ridge hypershrinkage
     #levelsY = levelsY, #in case of logistic
     sigmahat=sigmahat #estimated sigma^2 (linear model)
@@ -2284,8 +2352,8 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
     output$muhat <- muhat[,nIt+1] #EB estimated prior group means: mu_global*muweight
     output$muglobal <- mutrgt #overall mutrgt
     output$gamma.mu <- weightsMu[,nIt+1] #group weights mean
-    output$w.mu <- partWeightsMu[,nIt+1] #grouping weights mean
-    output$hyperlambdas.mu <- lambdashat[1,nIt+1,] #hyperpenalties for all groupings for the group means
+    output$w.mu <- partWeightsMu[,nIt+1] #group set weights mean
+    output$hyperlambdas.mu <- lambdashat[1,nIt+1,] #hyperpenalties for all group sets for the group means
     output$offset.lp <- X[,!((1:p)%in%unpen)] %*% muhatp[!((1:p)%in%unpen)] #offset used in computing final beta (default 0),
   }
 
@@ -2312,9 +2380,12 @@ ecpc <- function(Y,X,groupings,groupings.grouplvl=NULL,
 ### Other functions 
 #Select covariates a posteriori----
 postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
-                          postselection="elnet+dense",maxsel=30, #selection options
-                          penalties,model,tauglobal,sigmahat=1,muhatp=0, #needed for method "elnet"
-                          X2=NaN,Y2=NaN){
+                          postselection=c("elnet,dense", "elnet,sparse", "BRmarginal,dense", 
+                                          "BRmarginal,sparse","DSS"), #posterior selection method
+                          maxsel=30, #maximum number of selected variables
+                          penalties,model=c("linear", "logistic", "cox"),
+                          tauglobal,sigmahat=1,muhatp=0, #needed for method "elnet"
+                          X2=NaN,Y2=NaN,silent=FALSE){
   #Description:
   #Post-hoc variable selection: select maximum maxsel covariates of all penalised covariates
   #Unpenalised covariates (e.g. intercept) are always selected, on top of the maxsel number of selected penalised covariates
@@ -2343,7 +2414,18 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
   n<-dim(X)[1] #number of samples
   p<-dim(X)[2] #number of covariates (penalised and unpenalised)
   if(missing(penfctr)) penfctr <- rep(1,p) #all covariates penalised the same
+  if(length(postselection)>1) postselection <- "elnet+dense"
+  if(length(model)>1){
+    if(all(is.element(Y,c(0,1))) || is.factor(Y)){
+      model <- "logistic" 
+    } else if(all(is.numeric(Y)) & !(is.matrix(Y) && dim(Y)[2]==2)){
+      model <- "linear"
+    }else{
+      model <- "cox"
+    }
+  }
 
+  
   maxsel2 <- pmin(maxsel, p)
   if(any(maxsel2<2)){
     warning("Number of variables to be selected should be at least 2 (out of convenience)")
@@ -2414,7 +2496,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
         lambdaoverall <- sigmahat/tauglobal
         lam2 <- sigmahat/tauglobal/n*sd_y
         Xacc <- X
-        Xacc[,pen] <- as.matrix(X[,pen] %*% sparseMatrix(i=1:length(lambdap[pen]),j=1:length(lambdap[pen]),
+        Xacc[,pen] <- as.matrix(X[,pen] %*% Matrix::sparseMatrix(i=1:length(lambdap[pen]),j=1:length(lambdap[pen]),
                                                    x=c(1/sqrt(lambdap[pen]/lambdaoverall))) )
 
         #define function with output number of selected variables minus maximum possible
@@ -2424,12 +2506,12 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
             return(p - maxselec)
           else {
             if(model=="cox"){
-              glmPost <- glmnet(Xacc[,nonzeros],Y,alpha=alpha,
+              glmPost <- glmnet::glmnet(Xacc[,nonzeros],Y,alpha=alpha,
                               lambda = lam2/(1-alpha),family=fml,
                               offset = offset, standardize = F,
                               penalty.factor=penfctr[nonzeros], thresh=10^-10)
             }else if(model %in% c("logistic","linear")){
-              glmPost <- glmnet(Xacc[,nonzeros],Y,alpha=alpha,
+              glmPost <- glmnet::glmnet(Xacc[,nonzeros],Y,alpha=alpha,
                               lambda = lam2/(1-alpha),family=fml,
                               offset = offset, standardize = F,
                               intercept= intrcpt,
@@ -2455,12 +2537,12 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
         
         #for found alpha, refit model to see which beta are selected
         if(model=="cox"){
-          glmPost0 <- glmnet(Xacc[,nonzeros],Y,alpha=alpha,
+          glmPost0 <- glmnet::glmnet(Xacc[,nonzeros],Y,alpha=alpha,
                            lambda = lam2/(1-alpha),family=fml,
                            offset = offset, standardize = F,
                            penalty.factor=penfctr[nonzeros], thresh=10^-10)
         }else{
-          glmPost0 <- glmnet(Xacc[,nonzeros],Y,alpha=alpha,
+          glmPost0 <- glmnet::glmnet(Xacc[,nonzeros],Y,alpha=alpha,
                            lambda = lam2/(1-alpha) ,family=fml,
                            offset = offset, intercept = intrcpt, standardize = F,
                            penalty.factor=penfctr[nonzeros], thresh=10^-10)
@@ -2480,12 +2562,12 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           #recalibrate overall lambda using cross-validation on selected variables only
           if(grepl("dense2",postselection)){ 
             if(model=="cox"){
-              lambdaGLM<-cv.glmnet(Xacc[,whichPostboth, drop=F],Y,alpha=0,
+              lambdaGLM<-glmnet::cv.glmnet(Xacc[,whichPostboth, drop=F],Y,alpha=0,
                                    family=fml,offset = offset ,standardize = F,
                                    penalty.factor=penfctr[whichPostboth], thresh=10^-10) #alpha=0 for ridge
               lam2<-lambdaGLM$lambda.min
             }else{
-              lambdaGLM<-cv.glmnet(Xacc[,whichPostboth, drop=F],Y,alpha=0,
+              lambdaGLM<-glmnet::cv.glmnet(Xacc[,whichPostboth, drop=F],Y,alpha=0,
                                    family=fml,offset = offset , intercept = intrcpt, standardize = F,
                                    penalty.factor=penfctr[whichPostboth], thresh=10^-10) #alpha=0 for ridge
               lam2<-lambdaGLM$lambda.min
@@ -2494,12 +2576,12 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           
           #Recompute beta using only selected beta and group ridge penalty (without lasso penalty)
           if(model=="cox"){
-            glmPost <- glmnet(Xacc[,whichPostboth, drop=F],Y,alpha=0,
+            glmPost <- glmnet::glmnet(Xacc[,whichPostboth, drop=F],Y,alpha=0,
                             lambda = lam2,family=fml,
                             offset = offset ,standardize = F,
                             penalty.factor=penfctr[whichPostboth], thresh=10^-10)
           }else{
-            glmPost <- glmnet(Xacc[,whichPostboth, drop=F],Y,alpha=0,
+            glmPost <- glmnet::glmnet(Xacc[,whichPostboth, drop=F],Y,alpha=0,
                             lambda = lam2,family=fml,
                             offset = offset , intercept = intrcpt, standardize = F,
                             penalty.factor=penfctr[whichPostboth], thresh=10^-10)
@@ -2508,7 +2590,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           betaPost[whichPostboth] <- as.vector(glmPost$beta)
           indPostpen <- whichPostboth[pen] #penalised covariates in range 1:length(pen) that are selected and non-zero
           indPostp <- whichPostboth&((1:p)%in%pen) #penalised covariates in range 1:p that are selected and non-zero
-          betaPost[indPostp] <- c(1/sqrt(lambdap[indPostpen]/sigmahat*tauglobal)) * betaPost[indPostp] + muhatp[indPostp]
+          betaPost[indPostp] <- c(1/sqrt(lambdap[indPostp]/sigmahat*tauglobal)) * betaPost[indPostp] + muhatp[indPostp]
           
           whichPost <- which(indPostp) #index of selected penalised covariates 
           output<-list()
@@ -2518,21 +2600,21 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           #output$offsetPost <- offset #offset used in Post
         }else{# if(grepl("sparse",postselection)){ #refit standard ridge with newly cross-validated lambda
           if(model=="cox"){
-            lambdaGLM<-cv.glmnet(X[,whichPostboth, drop=F],Y,alpha=0,family=fml,
+            lambdaGLM<-glmnet::cv.glmnet(X[,whichPostboth, drop=F],Y,alpha=0,family=fml,
                                  standardize = F,penalty.factor=penfctr[whichPostboth]) #alpha=0 for ridge
             lam2<-lambdaGLM$lambda.min
           }else{
-            lambdaGLM<-cv.glmnet(X[,whichPostboth, drop=F],Y,alpha=0,family=fml,
+            lambdaGLM<-glmnet::cv.glmnet(X[,whichPostboth, drop=F],Y,alpha=0,family=fml,
                                  standardize = F,penalty.factor=penfctr[whichPostboth]) #alpha=0 for ridge
             lam2<-lambdaGLM$lambda.min
           }
           if(model=="cox"){
-            glmPost <- glmnet(X[,whichPostboth, drop=F],Y,alpha=0,
+            glmPost <- glmnet::glmnet(X[,whichPostboth, drop=F],Y,alpha=0,
                             lambda = lam2,family=fml,
                             offset = offset ,standardize = F,
                             penalty.factor=penfctr[whichPostboth], thresh=10^-10)
           }else{
-            glmPost <- glmnet(X[,whichPostboth, drop=F],Y,alpha=0,
+            glmPost <- glmnet::glmnet(X[,whichPostboth, drop=F],Y,alpha=0,
                             lambda = lam2,family=fml,
                             intercept = intrcpt, standardize = F,
                             penalty.factor=penfctr[whichPostboth], thresh=10^-10)
@@ -2578,7 +2660,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
       #Hahn and Carvalho 2014
       #Use adaptive lasso penalty on linear predictiors as in Equation (22) of their paper
       Xacc <- X
-      Xacc[,pen] <- as.matrix(Xacc[,pen]%*% sparseMatrix(i=1:length(beta[pen]),j=1:length(pen),
+      Xacc[,pen] <- as.matrix(Xacc[,pen]%*% Matrix::sparseMatrix(i=1:length(beta[pen]),j=1:length(pen),
                                    x=c(sqrt(abs(beta[pen])))) )
       Ygamma <- Xacc%*%beta
       
@@ -2586,7 +2668,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
       if(grepl("fast",postselection)){
         #use glmnet to compute beta for a whole range of lambda simultaneously
         #faster, but might result in fewer selected variables than asked for
-        glmPost <- glmnet(x=Xacc[,nonzeros],y=Ygamma,alpha=1,nlambda=100,
+        glmPost <- glmnet::glmnet(x=Xacc[,nonzeros],y=Ygamma,alpha=1,nlambda=100,
                           family="gaussian",
                           intercept = intrcpt, standardize = F,
                           penalty.factor=penfctr[nonzeros], thresh=10^-10)
@@ -2594,7 +2676,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
         #retrieve exactly maxsel non-zero covariates
         if(length(intrcpt==0)||intrcpt==0){intrcpt <- F}else{intrcpt <- T}
         fsel <- function(lam1,maxselec=maxsel2){
-          glmPost <- glmnet(x=Xacc[,nonzeros],y=Ygamma,alpha=1,
+          glmPost <- glmnet::glmnet(x=Xacc[,nonzeros],y=Ygamma,alpha=1,
                             lambda = lam1,family="gaussian",
                             intercept = intrcpt, standardize = F,
                             penalty.factor=penfctr[nonzeros], thresh=10^-10)
@@ -2648,7 +2730,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           }else{
             lam1 <- uniroot(fsel,maxselec=x, interval = c(0, max(lambdap[lambdap<Inf],na.rm=T)*sigmahat/n), 
                             maxiter = 200,tol=10^(-10))$root
-            glmPost <- glmnet(x=Xacc[,nonzeros],y=Ygamma,alpha=1,
+            glmPost <- glmnet::glmnet(x=Xacc[,nonzeros],y=Ygamma,alpha=1,
                               lambda = lam1,family="gaussian",
                               intercept = intrcpt, standardize = F,
                               penalty.factor=penfctr[nonzeros], thresh=10^-10)
@@ -2714,23 +2796,23 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
         W <- diag(c(sqrt(H0*expXb)))
       }
       
-      Sigminhalf<-sqrtm(t(X[,ind])%*%W%*%X[,ind]+diag(lambdap[ind])) / sqrt(sigmahat) #posterior covariance matrix Sigma, Sigma^{-0.5}
+      Sigminhalf<-expm::sqrtm(t(X[,ind])%*%W%*%X[,ind]+diag(lambdap[ind])) / sqrt(sigmahat) #posterior covariance matrix Sigma, Sigma^{-0.5}
       #D<- diag(beta[ind]^2) #diagonal matrix with beta_k^2 on the diagonal
       
       Xstar <- t(t(Sigminhalf) * beta[ind]^2) #Sigma^{-0.5} D
       Ystar <- Sigminhalf %*% beta[ind] 
       
       #first fit for range of lambda 
-      glmPost <- glmnet(Xstar,Ystar,alpha=1,family="gaussian",
+      glmPost <- glmnet::glmnet(Xstar,Ystar,alpha=1,family="gaussian",
                       standardize = F,intercept= F, thresh=10^-10)
      
       output<-lapply(maxsel2,function(x){
         fsel <- function(lambda,maxselec = x){
-          fit<-coef.glmnet(glmPost,s=lambda,exact=T,x=Xstar,y=Ystar)
+          fit<-glmnet::coef.glmnet(glmPost,s=lambda,exact=T,x=Xstar,y=Ystar)
           return(sum(fit!=0)- maxselec) #number of non-zero penalised covariates
         }
         lambda <- uniroot(fsel, interval = c(0, max(glmPost$lambda)), maxiter = 200,tol=10^(-10))$root
-        fit<-coef.glmnet(glmPost,s=lambda,exact=T,x=Xstar,y=Ystar)
+        fit<-glmnet::coef.glmnet(glmPost,s=lambda,exact=T,x=Xstar,y=Ystar)
       
         if(grepl("same",postselection)){
           if(x==maxsel2[1]) if(!silent) print("Selected covariates are not refit, unpenalised covariates are kept the same")
@@ -2818,16 +2900,16 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           if(length(muhatp)==1) muhatp <- rep(muhatp,p)
           if(!all(muhatp==0)) offset <- X[,indAll, drop=F] %*% muhatp[indAll, drop=F]
           Xacc <- X
-          Xacc[,pen] <- as.matrix(X[,pen] %*% sparseMatrix(i=1:length(lambdap[pen]),j=1:length(lambdap[pen]),
+          Xacc[,pen] <- as.matrix(X[,pen] %*% Matrix::sparseMatrix(i=1:length(lambdap[pen]),j=1:length(lambdap[pen]),
                                                            x=c(1/sqrt(lambdap[pen]/lambdaoverall))) )
 
           if(model=="cox"){
-            glmPost <- glmnet(Xacc[,indAll, drop=F],Y,alpha=0,
+            glmPost <- glmnet::glmnet(Xacc[,indAll, drop=F],Y,alpha=0,
                             lambda = lam2,family=fml,
                             offset = offset ,standardize = F,
                             penalty.factor=penfctr[indAll], thresh=10^-10)
           }else{
-            glmPost <- glmnet(Xacc[,indAll, drop=F],Y,alpha=0,
+            glmPost <- glmnet::glmnet(Xacc[,indAll, drop=F],Y,alpha=0,
                             lambda = lam2,family=fml,
                             offset = offset , intercept = intrcpt, standardize = F,
                             penalty.factor=penfctr[indAll], thresh=10^-10)
@@ -2837,21 +2919,21 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           betaPost[indPost] <- c(1/sqrt(lambdap[indPost]/lambdaoverall)) * betaPost[indPost] + muhatp[indPost]
         }else{ #sparse; refit with newly cross-validated lambda
           if(model=="cox"){
-            lambdaGLM<-cv.glmnet(X[,indAll, drop=F],Y,alpha=0,family=fml,
+            lambdaGLM<-glmnet::cv.glmnet(X[,indAll, drop=F],Y,alpha=0,family=fml,
                                  standardize = F,penalty.factor=penfctr[indAll]) #alpha=0 for ridge
             lam2<-lambdaGLM$lambda.min
           }else{
-            lambdaGLM<-cv.glmnet(X[,indAll, drop=F],Y,alpha=0,family=fml,
+            lambdaGLM<-glmnet::cv.glmnet(X[,indAll, drop=F],Y,alpha=0,family=fml,
                                  standardize = F,penalty.factor=penfctr[indAll]) #alpha=0 for ridge
             lam2<-lambdaGLM$lambda.min
           }
           if(model=="cox"){
-            glmPost <- glmnet(X[,indAll, drop=F],Y,alpha=0,
+            glmPost <- glmnet::glmnet(X[,indAll, drop=F],Y,alpha=0,
                             lambda = lam2,family=fml,
                             offset = offset ,standardize = F,
                             penalty.factor=penfctr[indAll], thresh=10^-10)
           }else{
-            glmPost <- glmnet(X[,indAll, drop=F],Y,alpha=0,
+            glmPost <- glmnet::glmnet(X[,indAll, drop=F],Y,alpha=0,
                             lambda = lam2,family=fml,
                             intercept = intrcpt, standardize = F,
                             penalty.factor=penfctr[indAll], thresh=10^-10)
@@ -2908,8 +2990,10 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
 }
 
 #Produce balanced folds----
-produceFolds <- function(nsam,outerfold,response,model="logistic",balance=TRUE,fixedfolds=F){
+produceFolds <- function(nsam,outerfold,response,model=c("logistic", "survival", "other"),
+                         balance=TRUE,fixedfolds=F){
   if(fixedfolds) set.seed(3648310) #else set.seed(NULL)
+  if(length(model)>1) model <- "logistic"
   if(model=="linear") balance=F
   if(!balance){
     rand<-sample(1:nsam)
@@ -2950,11 +3034,13 @@ produceFolds <- function(nsam,outerfold,response,model="logistic",balance=TRUE,f
 }
 
 #Estimate maximum marginal likelihood estimates for linear model----
-mlestlin <- function(Y,X,lambda=NaN,sigmasq=NaN,mu=NaN,tausq=NaN){
+.mlestlin <- function(Y,XXt,Xrowsum,lambda=NaN,sigmasq=NaN,mu=NaN,tausq=NaN){
   #lambda,sigmasq,mu are possibly fixed
   maxv <- var(Y)
-  p<-dim(X)[2]
-  n<-dim(X)[1]
+  
+  #p<-dim(X)[2]
+  n<-length(Y)
+  
   prms <- paste(c("l","s","m","t")[is.nan(c(lambda,sigmasq,mu,tausq))],collapse='') #unknown parameters: l lambda, s sigma, m mu
   if(prms=='t'||prms=='mt'){tausq <- sigmasq/lambda; prms <- gsub("t","",prms)}
   if(prms=='l'||prms=='lm'){lambda <- sigmasq/tausq; prms <- gsub("l","",prms)}
@@ -2963,10 +3049,9 @@ mlestlin <- function(Y,X,lambda=NaN,sigmasq=NaN,mu=NaN,tausq=NaN){
          'lsmt'={ #lambda, sigma, mu, tau unknown
            sim2 = function(ts){
              tausq<-ts[1];sigmasq<-ts[2];mu<-ts[3]
-             n <- nrow(X)
-             varY <- X %*% t(X) * exp(tausq) + diag(rep(1,n))*exp(sigmasq)
-             meanY <- X%*%rep(mu,p)
-             mlk <- -dmvnorm(c(Y),mean=meanY,sigma=varY,log=T)
+             varY <- XXt * exp(tausq) + diag(rep(1,n))*exp(sigmasq)
+             meanY <- mu*Xrowsum 
+             mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=T)
              return(mlk)
            }
            op <- optim(c(log(0.01),log(maxv),0),sim2)
@@ -2976,10 +3061,9 @@ mlestlin <- function(Y,X,lambda=NaN,sigmasq=NaN,mu=NaN,tausq=NaN){
          'lsm'={ #lambda, sigma, mu unknown, tau known
            sim2 = function(ts){
              sigmasq<-ts[1];mu<-ts[2]
-             n <- nrow(X)
-             varY <- X %*% t(X) * exp(tausq) + diag(rep(1,n))*exp(sigmasq)
-             meanY <- X%*%rep(mu,p)
-             mlk <- -dmvnorm(c(Y),mean=meanY,sigma=varY,log=T)
+             varY <- XXt * exp(tausq) + diag(rep(1,n))*exp(sigmasq)
+             meanY <- mu*Xrowsum #X%*%rep(mu,p)
+             mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=T)
              return(mlk)
            }
            op <- optim(c(log(maxv),0),sim2)
@@ -2989,10 +3073,9 @@ mlestlin <- function(Y,X,lambda=NaN,sigmasq=NaN,mu=NaN,tausq=NaN){
          'lst'={ #lambda, sigma, tau unknown, mu known
            sim2 = function(ts){
              tausq<-ts[1];sigmasq<-ts[2]
-             n <- nrow(X)
-             varY <- X %*% t(X) * exp(tausq) + diag(rep(1,n))*exp(sigmasq)
-             meanY <- X%*%rep(mu,p)
-             mlk <- -dmvnorm(c(Y),mean=meanY,sigma=varY,log=T)
+             varY <- XXt * exp(tausq) + diag(rep(1,n))*exp(sigmasq)
+             meanY <- mu*Xrowsum 
+             mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=T)
              return(mlk)
            }
            op <- optim(c(log(0.01),log(maxv)),sim2)
@@ -3002,10 +3085,9 @@ mlestlin <- function(Y,X,lambda=NaN,sigmasq=NaN,mu=NaN,tausq=NaN){
          'lmt'={ #lambda, tau, mu unknown, sigma known
            sim2 = function(ts){
              tausq<-ts[1]; mu <- ts[2]
-             n <- nrow(X)
-             varY <- X %*% t(X) * exp(tausq) + diag(rep(1,n))*sigmasq
-             meanY <- X%*%rep(mu,p)
-             mlk <- -dmvnorm(c(Y),mean=meanY,sigma=varY,log=T)
+             varY <- XXt * exp(tausq) + diag(rep(1,n))*sigmasq
+             meanY <- mu*Xrowsum 
+             mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=T)
              return(mlk)
            }
            op <- optim(c(log(0.01),0),sim2)
@@ -3015,10 +3097,9 @@ mlestlin <- function(Y,X,lambda=NaN,sigmasq=NaN,mu=NaN,tausq=NaN){
          'lt'={ #lambda, tau unknown, sigma, mu known
            sim2 = function(ts){
              tausq<-ts[1];
-             n <- nrow(X)
-             varY <- X %*% t(X) * exp(tausq) + diag(rep(1,n))*sigmasq
-             meanY <- X%*%rep(mu,p)
-             mlk <- -dmvnorm(c(Y),mean=meanY,sigma=varY,log=T)
+             varY <- XXt * exp(tausq) + diag(rep(1,n))*sigmasq
+             meanY <- mu*Xrowsum 
+             mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=T)
              return(mlk)
            }
            op <- optim(c(log(0.01)),sim2,method="Brent",lower=log(1e-10),upper=log(100))
@@ -3031,10 +3112,9 @@ mlestlin <- function(Y,X,lambda=NaN,sigmasq=NaN,mu=NaN,tausq=NaN){
          'smt'={ #sigma, tau, mu unknown, lambda known
            sim2 = function(ts){
              tausq<-log(exp(ts[1])/lambda); sigmasq<-ts[1]; mu<-ts[2]
-             n<- nrow(X)
-             varY <- X %*% t(X) * exp(tausq) + diag(rep(1,n))*exp(sigmasq)
-             meanY <- X%*%rep(mu,p)
-             mlk <- -dmvnorm(c(Y),mean=meanY,sigma=varY,log=T)
+             varY <- XXt * exp(tausq) + diag(rep(1,n))*exp(sigmasq)
+             meanY <- mu*Xrowsum 
+             mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=T)
              return(mlk)
            }
            op <- optim(c(log(maxv),0),sim2,method="L-BFGS-B",lower=c(log(1e-10),-10^{99}),upper=c(log(2*maxv),10^{99}))
@@ -3047,10 +3127,9 @@ mlestlin <- function(Y,X,lambda=NaN,sigmasq=NaN,mu=NaN,tausq=NaN){
          'st'={ #sigma, tau unknown, lambda, mu known
            sim2 = function(ts){
              tausq<-log(exp(ts)/lambda); sigmasq<-ts
-             n<- nrow(X)
-             varY <- X %*% t(X) * exp(tausq) + diag(rep(1,n))*exp(sigmasq)
-             meanY <- X%*%rep(mu,p)
-             mlk <- -dmvnorm(c(Y),mean=meanY,sigma=varY,log=T)
+             varY <- XXt * exp(tausq) + diag(rep(1,n))*exp(sigmasq)
+             meanY <- mu*Xrowsum 
+             mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=T)
              return(mlk)
            }
            op <- optim(c(log(maxv)),sim2,method="Brent",lower=log(1e-10),upper=log(2*maxv))
@@ -3059,10 +3138,9 @@ mlestlin <- function(Y,X,lambda=NaN,sigmasq=NaN,mu=NaN,tausq=NaN){
          'ls'={ #lambda, sigma unknown, tau, mu known
            sim2 = function(ts){
              sigmasq<-ts[1];
-             n <- nrow(X)
-             varY <- X %*% t(X) * exp(tausq) + diag(rep(1,n))*sigmasq
-             meanY <- X%*%rep(mu,p)
-             mlk <- -dmvnorm(c(Y),mean=meanY,sigma=varY,log=T)
+             varY <- XXt * exp(tausq) + diag(rep(1,n))*sigmasq
+             meanY <- mu*Xrowsum 
+             mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=T)
              return(mlk)
            }
            op <- optim(c(log(maxv)),sim2,method="Brent",lower=log(1e-10),upper=log(2*maxv))
@@ -3072,10 +3150,9 @@ mlestlin <- function(Y,X,lambda=NaN,sigmasq=NaN,mu=NaN,tausq=NaN){
          'm'={ #mean unknown, lambda, sigma, tau known
            sim2 = function(ts){
              mu<-ts
-             n<- nrow(X)
-             varY <- X %*% t(X) * tausq + diag(rep(1,n))*sigmasq
-             meanY <- X%*%rep(mu,p)
-             mlk <- -dmvnorm(c(Y),mean=meanY,sigma=varY,log=T)
+             varY <- XXt * tausq + diag(rep(1,n))*sigmasq
+             meanY <- mu*Xrowsum 
+             mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=T)
              return(mlk)
            }
            op <- optim(0,sim2,method="Brent",lower=-10^{99},upper=10^{99})
@@ -3089,7 +3166,8 @@ mlestlin <- function(Y,X,lambda=NaN,sigmasq=NaN,mu=NaN,tausq=NaN){
 
 
 #simulate data for linear or logistic----
-simDat <- function(n,p,n2=20,muGrp,varGrp,indT,sigma=1,model='linear',flag=F){
+simDat <- function(n,p,n2=20,muGrp,varGrp,indT,sigma=1,
+                   model=c("linear", "logistic"),flag=F){
   #Simulate data:
   #X~MVN(0,1)
   #beta_k~N(mu_{g(k)},sig_{g(k)}
@@ -3106,16 +3184,17 @@ simDat <- function(n,p,n2=20,muGrp,varGrp,indT,sigma=1,model='linear',flag=F){
   #model: generate data for "linear" or "logistic" setting
   #flag: True if plots and histograms of generated data have to be shown
   
+  if(length(model)>1) model <- "linear"
   #generate expression data
-  X <- rmvnorm(n,rep(0,p),diag(rep(1,p))) #X~MVN(0,1)
-  X2 <- rmvnorm(n2,rep(0,p),diag(rep(1,p))) #X2 independent data
+  X <- mvtnorm::rmvnorm(n,rep(0,p),diag(rep(1,p))) #X~MVN(0,1)
+  X2 <- mvtnorm::rmvnorm(n2,rep(0,p),diag(rep(1,p))) #X2 independent data
   
   #center X
   meansX<-apply(X,2,mean)
   Xctd <- t(t(X) - meansX) #center X
   meansX2<-apply(X2,2,mean)
   X2ctd <- t(t(X2) - meansX2) #center X
-  beta <- c(rmvnorm(1,muGrp[indT],
+  beta <- c(mvtnorm::rmvnorm(1,muGrp[indT],
                   diag(varGrp[indT]))) #beta_k~N(mu_{g(k)},tau_{g(k)}^2)
   
   if(model=='linear'){
@@ -3123,7 +3202,7 @@ simDat <- function(n,p,n2=20,muGrp,varGrp,indT,sigma=1,model='linear',flag=F){
     Y2 <- X2ctd %*% beta + rnorm(n2,0,sd=sigma) #Y~N(X*beta,sigma^2)
     
     if(flag){
-      if(!silent) print(paste("Simulated data for",model,"regression"))
+      print(paste("Simulated data for",model,"regression"))
       #plot data
       plot(Y)
       points(Xctd %*% beta, col='red') #Y without the added noise
@@ -3139,7 +3218,7 @@ simDat <- function(n,p,n2=20,muGrp,varGrp,indT,sigma=1,model='linear',flag=F){
     Y2 <- rbinom(n2,1,expX2b/(1+expX2b))
     
     if(flag){
-      if(!silent) print(paste("Simulated data for",model,"regression"))
+      print(paste("Simulated data for",model,"regression"))
       #plot data
       plot(Y)
       points(expXb/(1+expXb), col='red') #Y without the added noise
@@ -3160,8 +3239,16 @@ simDat <- function(n,p,n2=20,muGrp,varGrp,indT,sigma=1,model='linear',flag=F){
 }
 
 #Perform cross-validation----
-cv.ecpc <- function(Y,X,type.measure="MSE",outerfolds=10,
+cv.ecpc <- function(Y,X,type.measure=c("MSE", "AUC"),outerfolds=10,
                     lambdas=NULL,ncores=1,balance=T,silent=F,...){
+  
+  #initialise global variables for CMD check
+  Method <- NULL; Fold <- NULL; AUC <- NULL; Ypred <- NULL; Truth <- NULL
+  NumberSelectedVars <- NULL
+  
+  if(requireNamespace("magrittr")) `%>%` <- magrittr::`%>%`
+  
+  if(length(type.measure)>1) type.measure <- "MSE"
   ecpc.args <- list(...)
   if(!is.element("model",names(ecpc.args))){
     if(all(is.element(Y,c(0,1))) || is.factor(Y)){
@@ -3197,17 +3284,23 @@ cv.ecpc <- function(Y,X,type.measure="MSE",outerfolds=10,
     lambdas <- rep(NaN,length(folds2))
   }
   
-  grpsno <- c(unlist(sapply(ecpc.args$groupings,function(x){1:length(x)}))) #vector with group numbers in all groupings
-  grpngsno <- c(unlist(sapply(1:length(ecpc.args$groupings),function(i){rep(i,length(ecpc.args$groupings[[i]]))}))) #vector with groupings numbers
-  dfGrps<-data.frame() #data frame in which group and grouping weights are stored
+  grpsno <- c(unlist(sapply(ecpc.args$groupsets,function(x){1:length(x)}))) #vector with group numbers in all group sets
+  grpngsno <- c(unlist(sapply(1:length(ecpc.args$groupsets),function(i){rep(i,length(ecpc.args$groupsets[[i]]))}))) #vector with group sets numbers
+  dfGrps<-data.frame() #data frame in which group and group set weights are stored
   df<-data.frame() #data frame in which predicted values are stores for each of the samples in the left-out fold
   Res<-list() #list in which raw output of ecpc is stored (e.g. estimated regression coefficients)
   if(ncores>1){
-    cl <- makeCluster(ncores) #set up parallel cluster
-    registerDoParallel(cl)
-    finalMatrix <- foreach(i=1:nfolds, .combine=rbind, 
+    if(!(requireNamespace("doParallel")&requireNamespace("parallel")&requireNamespace("foreach"))){
+      warning("Packages doParallel, parallel and foreach should be installed for parallel processing")
+      print("ncores set to 1")
+      ncores <- 1
+      `%dopar%` <- foreach::`%dopar%`
+    }
+    cl <- parallel::makeCluster(ncores) #set up parallel cluster
+    doParallel::registerDoParallel(cl)
+    finalMatrix <- foreach::foreach(i=1:nfolds, .combine=rbind, 
                            .packages = c("glmnet","penalized","mvtnorm","gglasso",
-                                         "Matrix","Rsolnp","ecpc")) %dopar% {
+                                         "Matrix","ecpc")) %dopar% {
          
          tic<-proc.time()[[3]]
          Res[[i]]<-do.call(ecpc,args=c(list(Y=Y[-folds2[[i]]],X=X[-folds2[[i]],],Y2=Y[folds2[[i]]],
@@ -3234,9 +3327,9 @@ cv.ecpc <- function(Y,X,type.measure="MSE",outerfolds=10,
          }
          
          df3<-data.frame("Group"=grpsno,
-                         "Grouping"=grpngsno,
+                         "Groupset"=grpngsno,
                          "Group weight"=Res[[i]]$gamma,
-                         "Grouping weight"=Res[[i]]$w[grpngsno])
+                         "Groupset weight"=Res[[i]]$w[grpngsno])
          df3$Tau.ecpc <- Res[[i]]$tauglobal #global tau^2
          df3$Tau.ridge <- 1/Res[[i]]$lambdaridge #ordinary ridge tau^2
          df3$Method <- "ecpc"
@@ -3252,7 +3345,7 @@ cv.ecpc <- function(Y,X,type.measure="MSE",outerfolds=10,
     dfGrps2 <- lapply(1:nfolds,function(i) finalMatrix[i,3][[1]])
     df <- df2[[1]]; for(i in 2:nfolds) df <- rbind(df,df2[[i]])
     dfGrps <- dfGrps2[[1]]; for(i in 2:nfolds) dfGrps <- rbind(dfGrps,dfGrps2[[i]])
-    stopCluster(cl); rm(cl)
+    parallel::stopCluster(cl); rm(cl)
   }else{
     for(i in 1:nfolds){
        tic<-proc.time()[[3]]
@@ -3280,9 +3373,9 @@ cv.ecpc <- function(Y,X,type.measure="MSE",outerfolds=10,
        df<-rbind(df,df2)
        
        df3<-data.frame("Group"=grpsno,
-                       "Grouping"=grpngsno,
+                       "Groupset"=grpngsno,
                        "Group weight"=Res[[i]]$gamma,
-                       "Grouping weight"=Res[[i]]$w[grpngsno])
+                       "Groupset weight"=Res[[i]]$w[grpngsno])
        df3$Tau.ecpc <- Res[[i]]$tauglobal #global tau^2
        df3$Tau.ridge <- 1/Res[[i]]$lambdaridge #ordinary ridge tau^2
        df3$Method <- "ecpc"
@@ -3304,43 +3397,60 @@ cv.ecpc <- function(Y,X,type.measure="MSE",outerfolds=10,
     df$Truth <- as.numeric(df$Truth)-1
   }
   if(type.measure=="MSE"){
-    dfCVM <- df %>% group_by(Method,Fold) %>% summarise(CVM = mean((Ypred-Truth)^2),Type="MSE",
-                                                   NumberSelectedVars=mean(NumberSelectedVars)) %>% ungroup()
+    dfCVM <- df %>% dplyr::group_by(Method,Fold) %>% dplyr::summarise(CVM = mean((Ypred-Truth)^2),Type="MSE",
+                                                   NumberSelectedVars=mean(NumberSelectedVars)) %>% dplyr::ungroup()
   }
   else if(type.measure=="AUC"){
-    dfROC<-data.frame()
+    requireNamespace("pROC")
+    
+    # dfROC<-data.frame()
+    # for(i in levels(df$Method)){
+    #   temp<-data.frame()
+    #   cutoffs<-rev(seq(0,1,by=0.001))
+    #   rocGR <- roc(probs=df$Ypred[df$Method==i],true=df$Truth[df$Method==i],cutoffs=cutoffs)
+    #   temp<-data.frame("FPR"=rocGR[1,],"TPR"=rocGR[2,],"Accuracy"=rocGR[3,])
+    #   temp$Method <- i
+    #   temp$AUC<-c(auc(rocGR))
+    #   temp$NumberSelectedVars<-mean(df$NumberSelectedVars[df$Method==i])
+    #   dfROC<-rbind(dfROC,temp)
+    # }
+    dfCVM<-data.frame()
     for(i in levels(df$Method)){
-      temp<-data.frame()
-      cutoffs<-rev(seq(0,1,by=0.001))
-      rocGR <- roc(probs=df$Ypred[df$Method==i],true=df$Truth[df$Method==i],cutoffs=cutoffs)
-      temp<-data.frame("FPR"=rocGR[1,],"TPR"=rocGR[2,],"Accuracy"=rocGR[3,])
-      temp$Method <- i
-      temp$AUC<-c(auc(rocGR))
+      temp<-data.frame("Method"=i)
+      rocpROC <- pROC::roc(predictor=df$Ypred[df$Method==i],response=df$Truth[df$Method==i],
+                         smooth=F,auc=T,levels=c(0,1),direction="<")
+      temp$CVM<-rocpROC$auc[1]
       temp$NumberSelectedVars<-mean(df$NumberSelectedVars[df$Method==i])
-      dfROC<-rbind(dfROC,temp)
+      dfCVM<-rbind(dfCVM,temp)
     }
-    dfCVM <- dfROC %>% group_by(Method) %>% summarise(CVM=mean(AUC),Type="AUC",
-                                                      NumberSelectedVars=mean(NumberSelectedVars)) %>% ungroup()
+    dfCVM$Type <- "AUC"
+    
   }else{
     warning(paste("The type of measure",type.measure,"is not yet supported."))
   }
   
   return(list(ecpc.fit=Res, #list with model fit in each fold
               dfPred = df, #data frame with information about out-of-bag predictions
-              dfGrps=dfGrps, #data frame with information about estimated group and grouping weights across folds
+              dfGrps=dfGrps, #data frame with information about estimated group and group set weights across folds
               dfCVM = dfCVM #data frame with cross-validated performance metric
   ))
 }
 
 #Discretise continuous co-data hierarchically----
 #Output: list of groups of covariates of varying size
-splitMedian <- function(values,index,depth,minGroupSize=50,first=T,split="both"){
+splitMedian <- function(values,index,depth,minGroupSize=50,first=T,
+                        split=c("both","lower","higher")){
   #split: "both" or "lower" if both groups have to be split recursively or only lower, lower-valued group
+  if(length(split)==3) split <- "both"
   if(missing(depth)){
     depth <- floor(log2(length(values)/minGroupSize)) #number of layers in hierarchical tree such that lowest level contains at least minSize group members (start from 2 groups)
   }
   if(missing(index)&first){
     index <- 1:length(values)
+  }
+  if(split=="higher"){
+    values <- -values
+    split <- "lower"
   }
   
   medianX <- median(values) #compute median
@@ -3374,40 +3484,40 @@ splitMedian <- function(values,index,depth,minGroupSize=50,first=T,split="both")
   }
 }
 
-#Obtain grouping on group level for hierarhical groups----
+#Obtain group set on group level for hierarhical groups----
 #Output: list of groups of group numbers (i.e. on group level) defining the hierarchy
-obtainHierarchy <- function(grouping,penalty="LOG"){
+obtainHierarchy <- function(groupset,penalty="LOG"){
   if(penalty=="LOG"){
     #if Latent Overlapping Group Lasso hypershrinkage is used (for now the only option in ecpc), 
     # the hierarchy on the covariate groups is defined as:
     # for each group number (node in the hierarchical tree),
     # make a group of the group number, say g, and all group numbers of groups that are supersets of group g
-    grouping.grplvl <- lapply(grouping,function(i){as.numeric(which(sapply(grouping,function(j){all(i%in%j)})))})
+    groupset.grplvl <- lapply(groupset,function(i){as.numeric(which(sapply(groupset,function(j){all(i%in%j)})))})
   }else if(penalty=="GL"){
     #NOTE: this option is not yet available in ecpc, use LOG for hierarchical groups;
     #if Group Lasso hypershrinkage is used, the hierarchy on the covariate groups is defined as:
     # for each group number (node in the hierarchical tree): 
     # make a group of the group number, say g, and all group numbers of groups that are subsets of group g
-    grouping.grplvl <- lapply(grouping,function(j){as.numeric(which(sapply(grouping,function(i){all(i%in%j)})))})
+    groupset.grplvl <- lapply(groupset,function(j){as.numeric(which(sapply(groupset,function(i){all(i%in%j)})))})
   }
-  return(grouping.grplvl)
+  return(groupset.grplvl)
 }
 
 #Fit hierarchical lasso using LOG penalty----
-hierarchicalLasso <- function(X,Y,grouping){
+hierarchicalLasso <- function(X,Y,groupset){
   #X: nxp matrix with observed data
   #Y: nx1 vector with response
-  #grouping: list with hierarchical group indices
+  #groupset: list with hierarchical group indices
   
   p<-dim(X)[2]
-  Xxtnd <- X[,unlist(grouping)] #extend matrix such to create artifical non-overlapping groups
+  Xxtnd <- X[,unlist(groupset)] #extend matrix such to create artifical non-overlapping groups
   #create new group indices for Xxtnd
-  Kg2 <- c(1,sapply(grouping,length)) #group sizes on group level (1 added to easily compute hier. group numbers)
+  Kg2 <- c(1,sapply(groupset,length)) #group sizes on group level (1 added to easily compute hier. group numbers)
   G2 <- length(Kg2)-1
   groupxtnd <- lapply(2:length(Kg2),function(i){sum(Kg2[1:(i-1)]):(sum(Kg2[1:i])-1)}) #list of indices in each group
   groupxtnd2 <- unlist(sapply(1:G2,function(x){rep(x,Kg2[x+1])})) #vector with group number
   
-  cvfit <- cv.gglasso(x=Xxtnd,y=Y, group = groupxtnd2,pred.loss = c("L2"))
+  cvfit <- gglasso::cv.gglasso(x=Xxtnd,y=Y, group = groupxtnd2,pred.loss = c("L2"))
   
   #Hierarchical group lasso estimate for group variances
   #fit2<-gglasso(x=Xxtnd,y=Y,group = groupxtnd2, loss="ls")
@@ -3415,7 +3525,7 @@ hierarchicalLasso <- function(X,Y,grouping){
   vtilde <- coef(cvfit,s=cvfit$lambda.min)[-1]
   v<-lapply(groupxtnd,function(g){
     x<-rep(0,p)
-    x[unlist(grouping)[g]]<-x[unlist(grouping)[g]]+vtilde[g]
+    x[unlist(groupset)[g]]<-x[unlist(groupset)[g]]+vtilde[g]
     return(x)
   })
   betahat <- c(apply(array(unlist(v),c(p,G2)),1,sum))
@@ -3455,18 +3565,20 @@ hierarchicalLasso <- function(X,Y,grouping){
   #convergence (T/F): T if IWLS has converged under threshold eps, F otherwise 
   #nIt: number of iterations needed for convergence
   
+  p<- dim(X)[2]
+  
   if(missing(targets)) targets <- rep(0,dim(X)[2])
   
   betaold <- rep(0,p) #intial value
   it <- 0; nrm <- Inf
   while(nrm>eps & it<maxItr){
-    Xb <- LogData$Xstd %*% betaold #linear predictor
+    Xb <- X %*% betaold #linear predictor
     Ypred<-1/(1+exp(-Xb)) #predicted probability 
     W<-diag(c((Ypred*(1-Ypred)))) #Var(Y)
     
-    XtXDinv <- solve(t(LogData$Xstd) %*% W %*% LogData$Xstd + 2*diag(lambda,p)) #inverting pxp matrix
-    z <-  Xb + (LogData$Y - Ypred)/c(diag(W))
-    betas <- XtXDinv %*% (t(LogData$Xstd) %*% W %*% z + 2*diag(lambda,p)%*%mup)
+    XtXDinv <- solve(t(X) %*% W %*% X + 2*diag(penalties)) #inverting pxp matrix
+    z <-  Xb + (Y - Ypred)/c(diag(W))
+    betas <- XtXDinv %*% (t(X) %*% W %*% z + 2*diag(penalties)%*%targets)
     nrm <- sum((betas-betaold)^2)
     betaold <- betas
     it <- it + 1
@@ -3476,7 +3588,7 @@ hierarchicalLasso <- function(X,Y,grouping){
 }
 
 #Compute inverse gamma penalty parameters with mode 1 for given group size and hyperpenalty lambda----
-prmsIGMode1 <- function(lam,Kg){
+.prmsIGMode1 <- function(lam,Kg){
   #Input:
   #lam: penalty parameter lambda\in(0,\infty)
   #Kg: vector of group sizes
@@ -3512,32 +3624,41 @@ prmsIGMode1 <- function(lam,Kg){
 }
 
 ###Plotting functions
-#Visualise grouping----
-visualiseGrouping <- function(Grouping,groupweights,grouping.grouplvl,nodeSize=10,ls=1){
-  #return ggplot object with graphical visualisation of one grouping:
+#Visualise group set----
+visualiseGroupset <- function(Groupset,groupweights,groupset.grouplvl,nodeSize=10,ls=1){
+  #return ggplot object with graphical visualisation of one group set:
   #graph with nodes, possibly connected if hierarchy is given
   #if group weights are given, nodes are coloured accordingly: 
   #  (blue if >1, red if <1, ivory if =1 or no group weight given, white if not selected (=0))
   #
   #Input:
-  #Grouping: list of G elements containing the indices of the variables in that group
-  #grouping.grouplvl (optional): hierarchical structure on the groups
+  #Groupset: list of G elements containing the indices of the variables in that group
+  #groupset.grouplvl (optional): hierarchical structure on the groups
   #groupweights (optional): group weights
   #Output:
   #Plot in a ggplot2 object
+  if(!(requireNamespace("ggplot2")&requireNamespace("ggraph")&
+     requireNamespace("igraph")&requireNamespace("scales")&requireNamespace("dplyr"))){
+    stop("Packages ggplot2, ggraph, igraph and scales should be installed")
+  }
+  #initialise global variables and operators
+  `%>%` <- dplyr::`%>%`
+  name <- NULL; GrpWeight <- NULL; name2 <- NULL; Selected <- NULL
+  from <- NULL; node1.visible <- NULL
+  
   cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
   cols<-c("#FC8D59","ivory","#91BFDB") #brewer.pal(3,"RdYlBu")[c(1,3)]
   
-  Kg <- sapply(Grouping,length) #group size of each group
-  G<-length(Grouping) #number of groups in grouping
-  groupNames <- names(Grouping) #group names
-  if(length(names(Grouping))==0) groupNames <- 1:G
-  if(missing(grouping.grouplvl)||length(grouping.grouplvl)==0){
+  Kg <- sapply(Groupset,length) #group size of each group
+  G<-length(Groupset) #number of groups in group set
+  groupNames <- names(Groupset) #group names
+  if(length(names(Groupset))==0) groupNames <- 1:G
+  if(missing(groupset.grouplvl)||length(groupset.grouplvl)==0){
     basicGraph <- T
-    grouping.grouplvl <- lapply(1:G,function(x) x)
+    groupset.grouplvl <- lapply(1:G,function(x) x)
   }else basicGraph <- F
   i<-unlist(sapply(1:G,function(x){rep(x,unlist(Kg)[x])}))
-  j<-unlist(unlist(Grouping))
+  j<-unlist(unlist(Groupset))
   ind <- sparseMatrix(i,j,x=1) #sparse matrix with ij element 1 if jth element in group i (global index), otherwise 0
   
   #Co-data matrix: sparse matrix with ij element 1/Ij if beta_j in group i
@@ -3550,17 +3671,17 @@ visualiseGrouping <- function(Grouping,groupweights,grouping.grouplvl,nodeSize=1
   # We can add a second data frame with information for each node!
   vertices <- data.frame(name=groupNames)
   if(missing(groupweights)){
-    vertices <- vertices %>% mutate("name2"=name,"Selected"=T,"GrpWeight"=rep(1,G))
+    vertices <- vertices %>% dplyr::mutate("name2"=name,"Selected"=T,"GrpWeight"=rep(1,G))
     showFillLegend <- F
   } 
   else{
-    vertices <- vertices %>% mutate("GrpWeight"=round(groupweights,digits=2),
+    vertices <- vertices %>% dplyr::mutate("GrpWeight"=round(groupweights,digits=2),
                                     "Selected"=groupweights!=0,
                                     "name2"=paste(name," (",GrpWeight,")",sep=""))
     showFillLegend <- T
   }  
   
-  temp<-obtainHierarchy(grouping.grouplvl)
+  temp<-obtainHierarchy(groupset.grouplvl)
   children<-lapply(1:length(temp),function(i){
     children <- setdiff(temp[[i]],i)
     for(j in children){
@@ -3572,19 +3693,19 @@ visualiseGrouping <- function(Grouping,groupweights,grouping.grouplvl,nodeSize=1
   # create an edge list data frame giving the hierarchical structure of your individuals
   edgeList <- data.frame(from=as.character(unlist(sapply(1:length(children),function(x){rep(x,length(children[[x]]))}))),
                          to=as.character(unlist(children)))
-  mygraph <- graph_from_data_frame( edgeList ,vertices=vertices)
+  mygraph <- igraph::graph_from_data_frame( edgeList ,vertices=vertices)
   
   if(basicGraph){ # Basic groups (no hierarchy)
     # Create a graph object
-    mygraph <- graph_from_data_frame( edgeList ,vertices=vertices)
+    mygraph <- igraph::graph_from_data_frame( edgeList ,vertices=vertices)
     
-    lay <- create_layout(mygraph, layout = 'linear')
-    p<-ggraph(lay) +
-      geom_node_label(aes(label=name2,fill=GrpWeight,col=Selected), show.legend = showFillLegend, fontface = "bold",
+    lay <- ggraph::create_layout(mygraph, layout = 'linear')
+    p<-ggraph::ggraph(lay) +
+      ggraph::geom_node_label(ggplot2::aes(label=name2,fill=GrpWeight,col=Selected), show.legend = showFillLegend, fontface = "bold",
                       size=nodeSize,repel=T,
                       point.padding = NA, box.padding = 0, force = 0.1)+
       #scale_fill_gradientn(colors=c("white",cols),breaks=c(0,1,NA),limits=c(0,NA))+
-      scale_fill_gradientn(colors=c("white",cols),
+      ggplot2::scale_fill_gradientn(colors=c("white",cols),
                            #breaks=c(0,1,NA),
                            limits=c(0,NA),
                            values = scales::rescale(
@@ -3593,8 +3714,8 @@ visualiseGrouping <- function(Grouping,groupweights,grouping.grouplvl,nodeSize=1
                                1-1e-6,1+1e-6,
                                1+1e-6, max(lay$GrpWeight))),
                            name="Group weight")+
-      scale_color_manual(values=c("TRUE"="black","FALSE"=cbPalette[1]))+
-      theme_void()
+      ggplot2::scale_color_manual(values=c("TRUE"="black","FALSE"=cbPalette[1]))+
+      ggplot2::theme_void()
     return(p)
   }
   
@@ -3604,20 +3725,21 @@ visualiseGrouping <- function(Grouping,groupweights,grouping.grouplvl,nodeSize=1
   vertices$visible <- T
   vertices$visible[vertices$name=="origin"] <- F
   edgeList <- rbind(edgeList,data.frame(from=rep("origin",length(nodesNoParents)),to=as.character(nodesNoParents)))
-  edgeList <- edgeList %>% mutate(visible=from!="origin")
-  mygraph <- graph_from_data_frame( edgeList ,vertices=vertices)
-  lay <- create_layout(mygraph, layout = 'dendrogram', circular=F)
+  edgeList <- edgeList %>% dplyr::mutate(visible=from!="origin")
+  mygraph <- igraph::graph_from_data_frame( edgeList ,vertices=vertices)
+  lay <- ggraph::create_layout(mygraph, layout = 'dendrogram', circular=F)
   
   #str(get_edges("short")(lay))
   #lay$y[lay$name=="2"]<-lay$y[lay$name=="1"]
-  p<- ggraph(lay) + 
-    geom_edge_link(aes(alpha=node1.visible),edge_width=ls,
-                   arrow=arrow(ends="last",length=unit(3,"mm"),type="closed"),end_cap = circle(6, 'mm')) +
-    scale_edge_alpha_discrete(range=c(0,1),guide=F)+
-    geom_node_label(aes(label=name2,fill=GrpWeight,col=Selected),
+  p<- ggraph::ggraph(lay) + 
+    ggraph::geom_edge_link(ggplot2::aes(alpha=node1.visible),edge_width=ls,
+                   arrow=ggplot2::arrow(ends="last",length=ggplot2::unit(3,"mm"),type="closed"),
+                   end_cap = ggraph::circle(6, 'mm')) +
+    ggraph::scale_edge_alpha_discrete(range=c(0,1),guide=F)+
+    ggraph::geom_node_label(ggplot2::aes(label=name2,fill=GrpWeight,col=Selected),
                     show.legend=showFillLegend, fontface = "bold",size=nodeSize)+
     #scale_fill_gradient(low="white",high=cbPalette[4])+
-    scale_fill_gradientn(colors=c("white",cols),
+    ggplot2::scale_fill_gradientn(colors=c("white",cols),
                          #breaks=c(0,1,NA),
                          limits=c(0,NA),
                          values = scales::rescale(
@@ -3626,94 +3748,102 @@ visualiseGrouping <- function(Grouping,groupweights,grouping.grouplvl,nodeSize=1
                              1-1e-6,1+1e-6,
                              1+1e-6, max(lay$GrpWeight))),
                          name="Group weight")+
-    #geom_node_label(aes(label=name2,fill=factor(Selected)), fontface = "bold")+
-    scale_color_manual(values=c("FALSE"=cbPalette[1],"TRUE"="black"))+
-    coord_cartesian(ylim=c(min(lay$y)-0.5,max(lay$y[lay$name!="origin"])+0.5),xlim=c(min(lay$x)-0.5,max(lay$x)+0.5))+
-    #geom_node_text(aes(label=GrpWeight, filter=leaf) , angle=90 , hjust=1, nudge_y = -0.2) +
-    theme_void()
+    #geom_node_label(ggplot2::aes(label=name2,fill=factor(Selected)), fontface = "bold")+
+    ggplot2::scale_color_manual(values=c("FALSE"=cbPalette[1],"TRUE"="black"))+
+    ggplot2::coord_cartesian(ylim=c(min(lay$y)-0.5,max(lay$y[lay$name!="origin"])+0.5),xlim=c(min(lay$x)-0.5,max(lay$x)+0.5))+
+    #geom_node_text(ggplot2::aes(label=GrpWeight, filter=leaf) , angle=90 , hjust=1, nudge_y = -0.2) +
+    ggplot2::theme_void()
   
   return(p)
 }
 
-#Visualise grouping weights in CV folds----
-visualiseGroupingweights <- function(dfGrps,GroupingNames,hist=F,boxplot=T,jitter=T,ps=1.5,width=0.5){
-  #Plot cross-validated grouping weights
+#Visualise group set weights in CV folds----
+visualiseGroupsetweights <- function(dfGrps,GroupsetNames,hist=F,boxplot=T,jitter=T,ps=1.5,width=0.5){
+  #Plot cross-validated group set weights
   #
   #Input:
   #-dfGrps: dataframe with the following variables:
-  #   -Grouping: factor with grouping names
-  #   -Grouping.weight: groupings weight of each grouping
+  #   -Groupset: factor with group set names
+  #   -Groupset.weight: group set weight of each group set
   #   -Fold: number indicating which fold in the cross-validation is used
   #   -hist: if hist=T, a histogram is plotted
-  #-GroupingNames: vector with grouping names in order levels(dfGrps)
+  #-GroupsetNames: vector with group set names in order levels(dfGrps)
   #
   #Output:
   #-p1: plot in ggplot object
   
-  #change grouping names to those in GroupingNames if given
-  if(!missing(GroupingNames) && length(GroupingNames)>0){
-    if(is.factor(dfGrps$Grouping)){
-      dfGrps$Grouping <- factor(dfGrps$Grouping,levels = levels(dfGrps$Grouping)[levels(dfGrps$Grouping)%in%unique(dfGrps$Grouping)],
-                                 labels = GroupingNames)
+  if(!(requireNamespace("ggplot2")&requireNamespace("scales")&requireNamespace("dplyr"))){
+    stop("Packages ggplot2, dplyr and scales should be installed")
+  }
+  #initialise global variables and operators
+  `%>%` <- dplyr::`%>%`
+  Groupset <- NULL; Groupset.weight <- NULL; q75Weight <- NULL; q25Weight <- NULL;
+  meanWeight <- NULL; minWeight <- NULL; maxWeight <- NULL; Fold <- NULL
+  
+  #change group set names to those in GroupsetNames if given
+  if(!missing(GroupsetNames) && length(GroupsetNames)>0){
+    if(is.factor(dfGrps$Groupset)){
+      dfGrps$Groupset <- factor(dfGrps$Groupset,levels = levels(dfGrps$Groupset)[levels(dfGrps$Groupset)%in%unique(dfGrps$Groupset)],
+                                 labels = GroupsetNames)
     }else{
-      dfGrps$Grouping <- factor(GroupingNames[dfGrps$Grouping],levels=GroupingNames,labels=GroupingNames)
+      dfGrps$Groupset <- factor(GroupsetNames[dfGrps$Groupset],levels=GroupsetNames,labels=GroupsetNames)
     }
   }else{
-    dfGrps$Grouping <- as.factor(dfGrps$Grouping)
+    dfGrps$Groupset <- as.factor(dfGrps$Groupset)
   }
   
   if(hist){
-    p1 <- ggplot(dfGrps)+
-      aes(x=Grouping.weight)+
-      geom_histogram(aes(fill=Grouping),position = "identity",bins=20,alpha=0.6)+
-      scale_fill_discrete(name="Grouping")+
-      labs(x="Grouping weight")+
-      theme_bw()+
-      theme(axis.text.x=element_text(size=12),
-            axis.text.y=element_text(size=12),
-            axis.title.x=element_text(size=14),
-            axis.title.y=element_text(size=14),
-            legend.text=element_text(size=12),
-            legend.title=element_text(size=14))
+    p1 <- ggplot2::ggplot(dfGrps)+
+      ggplot2::aes(x=Groupset.weight)+
+      ggplot2::geom_histogram(ggplot2::aes(fill=Groupset),position = "identity",bins=20,alpha=0.6)+
+      ggplot2::scale_fill_discrete(name="Group set")+
+      ggplot2::labs(x="Group set weight")+
+      ggplot2::theme_bw()+
+      ggplot2::theme(axis.text.x=ggplot2::element_text(size=12),
+            axis.text.y=ggplot2::element_text(size=12),
+            axis.title.x=ggplot2::element_text(size=14),
+            axis.title.y=ggplot2::element_text(size=14),
+            legend.text=ggplot2::element_text(size=12),
+            legend.title=ggplot2::element_text(size=14))
     
   }else if(!(boxplot|jitter)){
-    SummdfGrps <- dfGrps %>% group_by(Grouping) %>% summarise("meanWeight"=mean(Grouping.weight),
-                                                               "q25Weight"=quantile(Grouping.weight,0.25),
-                                                               "q75Weight"=quantile(Grouping.weight,0.75),
-                                                               "maxWeight"=max(Grouping.weight),
-                                                               "minWeight"=min(Grouping.weight)) %>% ungroup()
+    SummdfGrps <- dfGrps %>% dplyr::group_by(Groupset) %>% dplyr::summarise("meanWeight"=mean(Groupset.weight),
+                                                               "q25Weight"=quantile(Groupset.weight,0.25),
+                                                               "q75Weight"=quantile(Groupset.weight,0.75),
+                                                               "maxWeight"=max(Groupset.weight),
+                                                               "minWeight"=min(Groupset.weight)) %>% dplyr::ungroup()
     
-    p1<-ggplot(SummdfGrps)+
-      geom_linerange(aes(x=Grouping,ymax=q75Weight,ymin=q25Weight,col=Grouping),linetype="dashed")+
-      geom_point(aes(x=Grouping,y=minWeight,col=Grouping),shape=2)+
-      geom_point(aes(x=Grouping,y=meanWeight,col=Grouping),shape=1)+
-      geom_point(aes(x=Grouping,y=maxWeight,col=Grouping),shape=6)+
-      scale_color_discrete(name="Grouping")+
-      labs(y="Grouping weight",x="Grouping")+
-      theme_bw()+
-      theme(axis.text.x=element_text(size=12),
-            axis.text.y=element_text(size=12),
-            axis.title.x=element_text(size=14),
-            axis.title.y=element_text(size=14),
-            legend.text=element_text(size=12),
-            legend.title=element_text(size=14))
+    p1<-ggplot2::ggplot(SummdfGrps)+
+      ggplot2::geom_linerange(ggplot2::aes(x=Groupset,ymax=q75Weight,ymin=q25Weight,col=Groupset),linetype="dashed")+
+      ggplot2::geom_point(ggplot2::aes(x=Groupset,y=minWeight,col=Groupset),shape=2)+
+      ggplot2::geom_point(ggplot2::aes(x=Groupset,y=meanWeight,col=Groupset),shape=1)+
+      ggplot2::geom_point(ggplot2::aes(x=Groupset,y=maxWeight,col=Groupset),shape=6)+
+      ggplot2::scale_color_discrete(name="Group set")+
+      ggplot2::labs(y="Group set weight",x="Group set")+
+      ggplot2::theme_bw()+
+      ggplot2::theme(axis.text.x=ggplot2::element_text(size=12),
+            axis.text.y=ggplot2::element_text(size=12),
+            axis.title.x=ggplot2::element_text(size=14),
+            axis.title.y=ggplot2::element_text(size=14),
+            legend.text=ggplot2::element_text(size=12),
+            legend.title=ggplot2::element_text(size=14))
   }else{
-    dfGrps2 <- dfGrps %>% group_by(Fold) %>% distinct(Grouping, .keep_all=T) %>% ungroup()
-    p1 <- ggplot(dfGrps2)+
-      scale_color_discrete(name="Grouping")+
-      labs(y="Grouping weight",x="Grouping")+
-      theme_bw()+
-      theme(axis.text.x=element_text(size=12),
-            axis.text.y=element_text(size=12),
-            axis.title.x=element_text(size=14),
-            axis.title.y=element_text(size=14),
-            legend.text=element_text(size=12),
-            legend.title=element_text(size=14))
+    dfGrps2 <- dfGrps %>% dplyr::group_by(Fold) %>% dplyr::distinct(Groupset, .keep_all=T) %>% dplyr::ungroup()
+    p1 <- ggplot2::ggplot(dfGrps2)+
+      ggplot2::scale_color_discrete(name="Group set")+
+      ggplot2::labs(y="Group set weight",x="Group set")+
+      ggplot2::theme_bw()+
+      ggplot2::theme(axis.text.x=ggplot2::element_text(size=12),
+            axis.text.y=ggplot2::element_text(size=12),
+            axis.title.x=ggplot2::element_text(size=14),
+            axis.title.y=ggplot2::element_text(size=14),
+            legend.text=ggplot2::element_text(size=12),
+            legend.title=ggplot2::element_text(size=14))
     if(boxplot){
-      p1 <- p1+geom_boxplot(aes(x=Grouping,y=Grouping.weight,col=Grouping),outlier.shape = NA,width=width)
+      p1 <- p1+ggplot2::geom_boxplot(ggplot2::aes(x=Groupset,y=Groupset.weight,col=Groupset),outlier.shape = NA,width=width)
     } 
     if(jitter){
-      p1<- p1+geom_jitter(aes(x=Grouping,col=Grouping,y=Grouping.weight),
+      p1<- p1+ggplot2::geom_jitter(ggplot2::aes(x=Groupset,col=Groupset,y=Groupset.weight),
                           size=ps,alpha=0.6,height=0,width=width/2)
     } 
   }
@@ -3724,69 +3854,80 @@ visualiseGroupingweights <- function(dfGrps,GroupingNames,hist=F,boxplot=T,jitte
 }
 
 #Visualise group weights in CV folds----
-visualiseGroupweights <- function(dfGrps,Grouping,grouping.grouplvl,values,widthBoxplot=0.05,boxplot=T,jitter=T,ps=1.5,ls=1){
-  #Plot cross-validated group weights for one grouping
+visualiseGroupweights <- function(dfGrps,Groupset,groupset.grouplvl,values,widthBoxplot=0.05,boxplot=T,jitter=T,ps=1.5,ls=1){
+  #Plot cross-validated group weights for one group set
   #
   #Input:
   #-dfGrps: dataframe with the following variables:
   #   -Group: factor with group names
   #   -Group.weight: group weight of each group
   #   -Fold: number indicating which fold in the cross-validation is used
-  #-Grouping: list of G elements containing covariate indices for each group
-  #-grouping.grouplvl (optional): groups of groups, e.g. in a hierarchical structure. 
+  #-Groupset: list of G elements containing covariate indices for each group
+  #-groupset.grouplvl (optional): groups of groups, e.g. in a hierarchical structure. 
   #-values (optional): values of continuous co-data. If given, group weights are plotted against these value
   #
   #Output:
   #-p1: plot in ggplot object
   
-  #change group names to those in Grouping if given
-  if(!missing(Grouping) && length(names(Grouping))>0){
+  if(!(requireNamespace("ggplot2")&requireNamespace("scales")&requireNamespace("dplyr"))){
+    stop("Packages ggplot2, dplyr and scales should be installed")
+  }
+  #initialise global variables and operators
+  `%>%` <- dplyr::`%>%`
+  Group <- NULL; Group.weight <- NULL; q75Weight <- NULL; q25Weight <- NULL
+  minWeight <- NULL; maxWeight <- NULL; meanWeight <- NULL;
+  newLeafGrp <- NULL; Continuous.values <- NULL; Weight <- NULL
+  originalLeafGrp <- NULL; q50Value <- NULL; minValue <- NULL; maxValue <- NULL
+  q50Weight <- NULL; Fold <- NULL; MedianGroupValue <- NULL
+  
+  #change group names to those in Groupset if given
+  if(!missing(Groupset) && length(names(Groupset))>0){
     if(is.factor(dfGrps$Group)){
       dfGrps$Group <- factor(dfGrps$Group,levels = levels(dfGrps$Group)[levels(dfGrps$Group)%in%unique(dfGrps$Group)],
-                             labels = names(Grouping))
+                             labels = names(Groupset))
     }else{
-      dfGrps$Group <- factor(names(Grouping)[dfGrps$Group])
+      dfGrps$Group <- factor(names(Groupset)[dfGrps$Group])
     }
   }
   
   if(missing(values) || length(values)==0){
-    SummdfGrps <- dfGrps %>% group_by(Group) %>% summarise("meanWeight"=mean(Group.weight),
+    SummdfGrps <- dfGrps %>% dplyr::group_by(Group) %>% dplyr::summarise("meanWeight"=mean(Group.weight),
                                                            "q25Weight"=quantile(Group.weight,0.25),
                                                            "q75Weight"=quantile(Group.weight,0.75),
                                                            "maxWeight"=max(Group.weight),
-                                                           "minWeight"=min(Group.weight)) %>% ungroup()
+                                                           "minWeight"=min(Group.weight)) %>% dplyr::ungroup()
     
     if(!(boxplot|jitter)){
-      p1<-ggplot(SummdfGrps)+
-        geom_hline(yintercept=1,col="grey",linetype="dashed",size=ls,alpha=0.6)+
-        geom_linerange(aes(x=Group,ymax=q75Weight,ymin=q25Weight,col=Group),linetype="dashed")+
-        geom_point(aes(x=Group,y=minWeight,col=Group),shape=2)+
-        geom_point(aes(x=Group,y=meanWeight,col=Group),shape=1)+
-        geom_point(aes(x=Group,y=maxWeight,col=Group),shape=6)+
-        labs(y="Prior variance weight")+
-        theme_bw()+
-        theme(axis.text.x=element_text(size=12),
-              axis.text.y=element_text(size=12),
-              axis.title.x=element_text(size=14),
-              axis.title.y=element_text(size=14),
-              legend.text=element_text(size=12),
-              legend.title=element_text(size=14))
+      p1<-ggplot2::ggplot(SummdfGrps)+
+        ggplot2::geom_hline(yintercept=1,col="grey",linetype="dashed",size=ls,alpha=0.6)+
+        ggplot2::geom_linerange(ggplot2::aes(x=Group,ymax=q75Weight,ymin=q25Weight,col=Group),linetype="dashed")+
+        ggplot2::geom_point(ggplot2::aes(x=Group,y=minWeight,col=Group),shape=2)+
+        ggplot2::geom_point(ggplot2::aes(x=Group,y=meanWeight,col=Group),shape=1)+
+        ggplot2::geom_point(ggplot2::aes(x=Group,y=maxWeight,col=Group),shape=6)+
+        ggplot2::labs(y="Prior variance weight")+
+        ggplot2::theme_bw()+
+        ggplot2::theme(axis.text.x=ggplot2::element_text(size=12),
+              axis.text.y=ggplot2::element_text(size=12),
+              axis.title.x=ggplot2::element_text(size=14),
+              axis.title.y=ggplot2::element_text(size=14),
+              legend.text=ggplot2::element_text(size=12),
+              legend.title=ggplot2::element_text(size=14))
     }else{
-      p1<-ggplot(dfGrps)+
-        geom_hline(yintercept=1,col="grey",linetype="dashed",size=ls,alpha=0.6)+
-        labs(y="Prior variance weight")+
-        theme_bw()+
-        theme(axis.text.x=element_text(size=12),
-              axis.text.y=element_text(size=12),
-              axis.title.x=element_text(size=14),
-              axis.title.y=element_text(size=14),
-              legend.text=element_text(size=12),
-              legend.title=element_text(size=14))
+      p1<-ggplot2::ggplot(dfGrps)+
+        ggplot2::geom_hline(yintercept=1,col="grey",linetype="dashed",size=ls,alpha=0.6)+
+        ggplot2::labs(y="Prior variance weight")+
+        ggplot2::theme_bw()+
+        ggplot2::theme(axis.text.x=ggplot2::element_text(size=12),
+              axis.text.y=ggplot2::element_text(size=12),
+              axis.title.x=ggplot2::element_text(size=14),
+              axis.title.y=ggplot2::element_text(size=14),
+              legend.text=ggplot2::element_text(size=12),
+              legend.title=ggplot2::element_text(size=14))
       if(boxplot){
-        p1<- p1+geom_boxplot(aes(x=Group,y=Group.weight,col=Group),outlier.shape = NA,show.legend=F)
+        p1<- p1+ggplot2::geom_boxplot(ggplot2::aes(x=Group,y=Group.weight,col=Group),outlier.shape = NA,show.legend=F)
       } 
       if(jitter){
-        p1<- p1+geom_jitter(aes(x=Group,y=Group.weight,col=Group),show.legend=F,
+        p1<- p1+ggplot2::geom_jitter(ggplot2::aes(x=Group,y=Group.weight,col=Group),show.legend=F,
                             size=ps,alpha=0.6,height=0,width=widthBoxplot/2)
       } 
     }
@@ -3812,12 +3953,12 @@ visualiseGroupweights <- function(dfGrps,Grouping,grouping.grouplvl,values,width
     }
     
     #find leaves (groups that have no children)
-    if(all(sapply(obtainHierarchy(Grouping),length)==1)) leaves <- 1:length(Grouping) 
-    else leaves <- which(sapply(obtainHierarchy(grouping.grouplvl),length)==1) 
+    if(all(sapply(obtainHierarchy(Groupset),length)==1)) leaves <- 1:length(Groupset) 
+    else leaves <- which(sapply(obtainHierarchy(groupset.grouplvl),length)==1) 
     
-    IndBetas<-getIndBetas(p=length(values),Grouping)
-    avrg <- sapply(Grouping[leaves],function(x){mean(values[x])}) #average of continuous co-data in leaf groups
-    medians <- sapply(Grouping[leaves],function(x){median(values[x])}) #median of continuous co-data in leaf groups
+    IndBetas<-getIndBetas(p=length(values),Groupset)
+    avrg <- sapply(Groupset[leaves],function(x){mean(values[x])}) #average of continuous co-data in leaf groups
+    medians <- sapply(Groupset[leaves],function(x){median(values[x])}) #median of continuous co-data in leaf groups
     ord <- order(avrg) 
     leaves<-leaves[ord]
     newLeaf <- as.factor(sapply(IndBetas,function(x){
@@ -3845,7 +3986,7 @@ visualiseGroupweights <- function(dfGrps,Grouping,grouping.grouplvl,values,width
     }
     dfBeta$Fold <- as.factor(dfBeta$Fold)
     
-    SummdfBeta <- dfBeta %>% group_by(newLeafGrp) %>% summarise("meanValue"=mean(Continuous.values),
+    SummdfBeta <- dfBeta %>% dplyr::group_by(newLeafGrp) %>% dplyr::summarise("meanValue"=mean(Continuous.values),
                                                                 "minValue"=min(Continuous.values),
                                                                 "maxValue"=max(Continuous.values),
                                                                 "q50Value"=quantile(Continuous.values,0.5),
@@ -3855,7 +3996,7 @@ visualiseGroupweights <- function(dfGrps,Grouping,grouping.grouplvl,values,width
                                                                 "maxWeight"=max(Weight),
                                                                 "minWeight"=min(Weight),
                                                                 "q50Weight"=quantile(Weight,0.5),
-                                                                "originalLeafGrp"=originalLeafGrp[1]) %>% ungroup()
+                                                                "originalLeafGrp"=originalLeafGrp[1]) %>% dplyr::ungroup()
     
     if(any(is.na(SummdfBeta$meanValue))){ #missing data group
       missingGroup <- which(is.na(SummdfBeta$meanValue))
@@ -3866,43 +4007,43 @@ visualiseGroupweights <- function(dfGrps,Grouping,grouping.grouplvl,values,width
     }
     
     if(!(boxplot|jitter)){
-      p1<-ggplot(SummdfBeta)+
-        geom_hline(yintercept=1,col="grey",linetype="dashed",size=ls,alpha=0.6)+
-        geom_linerange(aes(x=q50Value,ymax=q75Weight,ymin=q25Weight,col=originalLeafGrp),linetype="dashed")+
-        geom_point(aes(x=q50Value,y=minWeight,col=originalLeafGrp),shape=2)+
-        geom_point(aes(x=q50Value,y=meanWeight,col=originalLeafGrp),shape=1)+
-        geom_point(aes(x=q50Value,y=maxWeight,col=originalLeafGrp),shape=6)+
-        geom_segment(aes(x=minValue,xend=maxValue,y=q50Weight,yend=q50Weight,col=originalLeafGrp))+
-        scale_color_discrete(name="Group")+
-        labs(x="Continuous co-data value",y="Prior variance weight")+
-        theme_bw()+
-        theme(axis.text.x=element_text(size=12),
-              axis.text.y=element_text(size=12),
-              axis.title.x=element_text(size=14),
-              axis.title.y=element_text(size=14),
-              legend.text=element_text(size=12),
-              legend.title=element_text(size=14))
+      p1<-ggplot2::ggplot(SummdfBeta)+
+        ggplot2::geom_hline(yintercept=1,col="grey",linetype="dashed",size=ls,alpha=0.6)+
+        ggplot2::geom_linerange(ggplot2::aes(x=q50Value,ymax=q75Weight,ymin=q25Weight,col=originalLeafGrp),linetype="dashed")+
+        ggplot2::geom_point(ggplot2::aes(x=q50Value,y=minWeight,col=originalLeafGrp),shape=2)+
+        ggplot2::geom_point(ggplot2::aes(x=q50Value,y=meanWeight,col=originalLeafGrp),shape=1)+
+        ggplot2::geom_point(ggplot2::aes(x=q50Value,y=maxWeight,col=originalLeafGrp),shape=6)+
+        ggplot2::geom_segment(ggplot2::aes(x=minValue,xend=maxValue,y=q50Weight,yend=q50Weight,col=originalLeafGrp))+
+        ggplot2::scale_color_discrete(name="Group")+
+        ggplot2::labs(x="Continuous co-data value",y="Prior variance weight")+
+        ggplot2::theme_bw()+
+        ggplot2::theme(axis.text.x=ggplot2::element_text(size=12),
+              axis.text.y=ggplot2::element_text(size=12),
+              axis.title.x=ggplot2::element_text(size=14),
+              axis.title.y=ggplot2::element_text(size=14),
+              legend.text=ggplot2::element_text(size=12),
+              legend.title=ggplot2::element_text(size=14))
     }else{
-      dfBeta2 <- dfBeta %>% group_by(Fold) %>% distinct(originalLeafGrp, .keep_all=T) %>% ungroup()
+      dfBeta2 <- dfBeta %>% dplyr::group_by(Fold) %>% dplyr::distinct(originalLeafGrp, .keep_all=T) %>% dplyr::ungroup()
       
-      p1<-ggplot(dfBeta2)+
-        geom_hline(yintercept=1,col="grey",linetype="dashed",size=ls,alpha=0.6)+
-        geom_segment(data=SummdfBeta,aes(x=minValue,xend=maxValue,y=q50Weight,yend=q50Weight,col=originalLeafGrp),size=ls)+
-        labs(x="Continuous co-data value",y="Prior variance weight")+
-        scale_color_discrete(name="Group")+
-        theme_bw()+
-        theme(axis.text.x=element_text(size=12),
-              axis.text.y=element_text(size=12),
-              axis.title.x=element_text(size=14),
-              axis.title.y=element_text(size=14),
-              legend.text=element_text(size=12),
-              legend.title=element_text(size=14))
+      p1<-ggplot2::ggplot(dfBeta2)+
+        ggplot2::geom_hline(yintercept=1,col="grey",linetype="dashed",size=ls,alpha=0.6)+
+        ggplot2::geom_segment(data=SummdfBeta,ggplot2::aes(x=minValue,xend=maxValue,y=q50Weight,yend=q50Weight,col=originalLeafGrp),size=ls)+
+        ggplot2::labs(x="Continuous co-data value",y="Prior variance weight")+
+        ggplot2::scale_color_discrete(name="Group")+
+        ggplot2::theme_bw()+
+        ggplot2::theme(axis.text.x=ggplot2::element_text(size=12),
+              axis.text.y=ggplot2::element_text(size=12),
+              axis.title.x=ggplot2::element_text(size=14),
+              axis.title.y=ggplot2::element_text(size=14),
+              legend.text=ggplot2::element_text(size=12),
+              legend.title=ggplot2::element_text(size=14))
       if(boxplot){
-        p1<- p1 +geom_boxplot(aes(x=MedianGroupValue,col=originalLeafGrp,y=Weight),width=widthBoxplot,
+        p1<- p1 +ggplot2::geom_boxplot(ggplot2::aes(x=MedianGroupValue,col=originalLeafGrp,y=Weight),width=widthBoxplot,
                               varwidth=F,position="identity",outlier.shape = NA)
       } 
       if(jitter){
-        p1<- p1+geom_jitter(data=dfBeta2,aes(x=MedianGroupValue,col=originalLeafGrp,y=Weight),
+        p1<- p1+ggplot2::geom_jitter(data=dfBeta2,ggplot2::aes(x=MedianGroupValue,col=originalLeafGrp,y=Weight),
                             size=ps,alpha=0.6,height=0,width=widthBoxplot/4)
       }
       
@@ -3912,7 +4053,7 @@ visualiseGroupweights <- function(dfGrps,Grouping,grouping.grouplvl,values,width
 }
 
 #get weights of leaf groups in continuous codata
-.getWeightLeaves <- function(dfGrps,Grouping,grouping.grouplvl,values){
+.getWeightLeaves <- function(dfGrps,Groupset,groupset.grouplvl,values){
   #Return data frame with group weights of the leaf groups in a continuous co-data,
   #instead of the group weights per group in the hierarchical tree
   #
@@ -3921,85 +4062,93 @@ visualiseGroupweights <- function(dfGrps,Grouping,grouping.grouplvl,values,width
   #   -Group: factor with group names
   #   -Group.weight: group weight of each group
   #   -Fold: number indicating which fold in the cross-validation is used
-  #-Grouping: list of G elements containing covariate indices for each group
-  #-grouping.grouplvl (optional): groups of groups, e.g. in a hierarchical structure. 
+  #-Groupset: list of G elements containing covariate indices for each group
+  #-groupset.grouplvl (optional): groups of groups, e.g. in a hierarchical structure. 
   #-values (optional): values of continuous co-data. If given, group weights are plotted against these value
   #
   #Output:
   #-df: dataframe similar to dfGrps but with group weights for leaf groups
   
-  #change group names to those in Grouping if given
-  if(!missing(Grouping) && length(names(Grouping))>0){
+  Fold <- NULL; originalLeafGrp <- NULL
+  if(!all(c("Group","Group.weight","Fold")%in%names(dfGrps))){
+    stop("dfGrps should contain the variables Group, Group.weight and Fold")
+  } 
+  if(requireNamespace("magrittr")) `%>%` <- magrittr::`%>%`
+  
+  #change group names to those in Groupset if given
+  if(!missing(Groupset) && length(names(Groupset))>0){
     if(is.factor(dfGrps$Group)){
       dfGrps$Group <- factor(dfGrps$Group,levels = levels(dfGrps$Group)[levels(dfGrps$Group)%in%unique(dfGrps$Group)],
-                             labels = names(Grouping))
+                             labels = names(Groupset))
     }else{
-      dfGrps$Group <- factor(names(Grouping)[dfGrps$Group])
+      dfGrps$Group <- factor(names(Groupset)[dfGrps$Group])
     }
   }
   
   
-    getIndBetas<-function(p,ind){
-      indBetas <- lapply(1:p,function(x){
-        return(unlist(sapply(1:length(ind),function(grp){
-          if(any(x==ind[[grp]])) return(grp)
-          else return(NULL)
-        })))
-      }) #for each beta 1,..,p: group numbers
-      return(indBetas)
-    }
-    
-    GetWeight <- function(p,indBetas,groupweights,groupnumber){
-      averageweight <- unlist(sapply(1:p,function(x){
-        grps <- indBetas[[x]]
-        size <- length(grps)
-        return(mean(groupweights[groupnumber%in%grps]))
-      }))
-      return(averageweight)
-    }
-    
-    #find leaves (groups that have no children)
-    if(all(sapply(obtainHierarchy(Grouping),length)==1)) leaves <- 1:length(Grouping) 
-    else leaves <- which(sapply(obtainHierarchy(grouping.grouplvl),length)==1) 
-    
-    IndBetas<-getIndBetas(p=length(values),Grouping)
-    avrg <- sapply(Grouping[leaves],function(x){mean(values[x])}) #average of continuous co-data in leaf groups
-    ord <- order(avrg) 
-    leaves<-leaves[ord]
-    newLeaf <- as.factor(sapply(IndBetas,function(x){
-      which(leaves%in%x)
+  getIndBetas<-function(p,ind){
+    indBetas <- lapply(1:p,function(x){
+      return(unlist(sapply(1:length(ind),function(grp){
+        if(any(x==ind[[grp]])) return(grp)
+        else return(NULL)
+      })))
+    }) #for each beta 1,..,p: group numbers
+    return(indBetas)
+  }
+  
+  GetWeight <- function(p,indBetas,groupweights,groupnumber){
+    averageweight <- unlist(sapply(1:p,function(x){
+      grps <- indBetas[[x]]
+      size <- length(grps)
+      return(mean(groupweights[groupnumber%in%grps]))
     }))
-    originalLeaf <- as.factor(sapply(IndBetas,function(x){
-      leaves[which(leaves%in%x)]
-    }))
-    originalLeaf <- factor(originalLeaf,levels=leaves,labels=leaves) #order labels
+    return(averageweight)
+  }
+  
+  #find leaves (groups that have no children)
+  if(all(sapply(obtainHierarchy(Groupset),length)==1)) leaves <- 1:length(Groupset) 
+  else leaves <- which(sapply(obtainHierarchy(groupset.grouplvl),length)==1) 
+  
+  IndBetas<-getIndBetas(p=length(values),Groupset)
+  avrg <- sapply(Groupset[leaves],function(x){mean(values[x])}) #average of continuous co-data in leaf groups
+  ord <- order(avrg) 
+  leaves<-leaves[ord]
+  newLeaf <- as.factor(sapply(IndBetas,function(x){
+    which(leaves%in%x)
+  }))
+  originalLeaf <- as.factor(sapply(IndBetas,function(x){
+    leaves[which(leaves%in%x)]
+  }))
+  originalLeaf <- factor(originalLeaf,levels=leaves,labels=leaves) #order labels
+  
+  dfBeta <- data.frame()
+  for(l in unique(dfGrps$Fold)){
+    dfBeta2 <- data.frame("index"=1:length(values),
+                          "Weight"=GetWeight(length(values),indBetas=IndBetas,
+                                             groupweights=dfGrps$Group.weight[dfGrps$Fold==l],
+                                             groupnumber=dfGrps$Group[dfGrps$Fold==l]),
+                          "Continuous.values"=values,
+                          "newLeafGrp"=newLeaf,
+                          "originalLeafGrp"=originalLeaf
+    )
+    dfBeta2$Fold <- l
+    dfBeta <- rbind(dfBeta,dfBeta2)
+  }
+  dfBeta$Fold <- as.factor(dfBeta$Fold)
+  
+  #data frame with the group weight of all betas in the leaf group
+  dfGrps2 <- dfBeta %>% dplyr::group_by(Fold) %>% dplyr::distinct(originalLeafGrp, .keep_all = TRUE) %>% 
+    dplyr::select(c("originalLeafGrp","Weight","Fold","newLeafGrp")) %>% dplyr::ungroup()
+  dfGrps2$Group <- dfGrps2$originalLeafGrp
+  dfGrps2$Groupset<-dfGrps$Groupset[1]
+  dfGrps2$Group.weight <- dfGrps2$Weight
+  dfGrps2$Method <- dfGrps$Method[1]
+  dfGrps2 <- dfGrps2 %>% dplyr::group_by(Fold) %>% dplyr::mutate(Groupset.weight=dfGrps$Groupset.weight[which(dfGrps$Fold==unique(Fold))[1]],
+                                                   Taugr=dfGrps$Taugr[which(dfGrps$Fold==unique(Fold))[1]],
+                                                   Tauglm=dfGrps$Tauglm[which(dfGrps$Fold==unique(Fold))[1]]) %>% dplyr::ungroup()
+  if(!all(names(dfGrps)%in%names(dfGrps2))) warning("Check here, dfGrps has some variables that are not in new data frame")
+  dfGrps2 <- dfGrps2 %>% dplyr::select(names(dfGrps))
+  return(dfGrps2)
     
-    dfBeta <- data.frame()
-    for(l in unique(dfGrps$Fold)){
-      dfBeta2 <- data.frame("index"=1:length(values),
-                            "Weight"=GetWeight(length(values),indBetas=IndBetas,
-                                               groupweights=dfGrps$Group.weight[dfGrps$Fold==l],
-                                               groupnumber=dfGrps$Group[dfGrps$Fold==l]),
-                            "Continuous.values"=values,
-                            "newLeafGrp"=newLeaf,
-                            "originalLeafGrp"=originalLeaf
-      )
-      dfBeta2$Fold <- l
-      dfBeta <- rbind(dfBeta,dfBeta2)
-    }
-    dfBeta$Fold <- as.factor(dfBeta$Fold)
-
-    #data frame with the group weight of all betas in the leaf group
-    dfGrps2 <- dfBeta %>% group_by(Fold) %>% distinct(originalLeafGrp, .keep_all = TRUE) %>% 
-      select(c(originalLeafGrp,Weight,Fold,newLeafGrp)) %>% ungroup()
-    dfGrps2$Group <- dfGrps2$originalLeafGrp
-    dfGrps2$Grouping<-dfGrps$Grouping[1]
-    dfGrps2$Group.weight <- dfGrps2$Weight
-    dfGrps2$Method <- dfGrps$Method[1]
-    dfGrps2 <- dfGrps2 %>% group_by(Fold) %>% mutate(Grouping.weight=dfGrps$Grouping.weight[which(dfGrps$Fold==unique(Fold))[1]],
-                                                     Taugr=dfGrps$Taugr[which(dfGrps$Fold==unique(Fold))[1]],
-                                                     Tauglm=dfGrps$Tauglm[which(dfGrps$Fold==unique(Fold))[1]]) %>% ungroup()
-    if(!all(names(dfGrps)%in%names(dfGrps2))) warning("Check here, dfGrps has some variables that are not in new data frame")
-    dfGrps2 <- dfGrps2 %>% select(names(dfGrps))
-    return(dfGrps2)
+  
 }
