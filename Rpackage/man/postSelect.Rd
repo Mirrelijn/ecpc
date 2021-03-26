@@ -10,10 +10,10 @@ Perform posterior selection
 Given data and estimated parameters from a previously fit multi-group ridge penalised model, perform posterior selection to find a parsimonious model.
 }
 \usage{
-postSelect(X, Y, beta, intrcpt = 0, penfctr, postselection = c("elnet+dense",
-           "elnet+sparse","BRmarginal,dense","BRmarginal,sparse","DSS"), 
+postSelect(X, Y, beta, intrcpt = 0, penfctr, postselection = c("elnet,dense",
+           "elnet,sparse","BRmarginal,dense","BRmarginal,sparse","DSS"), 
            maxsel = 30, penalties, model=c("linear","logistic","cox"), 
-           tauglobal, sigmahat = 1, muhatp = 0, X2 = NaN, Y2 = NaN)
+           tauglobal, sigmahat = 1, muhatp = 0, X2 = NaN, Y2 = NaN,silent=FALSE)
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
@@ -73,10 +73,12 @@ Estimated global prior variance from the previously fit model.
 %%     ~~Describe \code{Y2} here~~
 (optional) Independent response data.
 }
+  \item{silent}{
+%%     ~~Describe \code{normalise} here~~
+Should output messages be suppressed (default FALSE)?
 }
-\details{
-%%  ~~ If necessary, more details than the description above ~~
 }
+
 \value{
 %%  ~Describe the value returned
 %%  If it is a LIST, use
@@ -91,20 +93,4 @@ A list with the following elements:
   \item{YpredPost}{If independent test set 'X2' is given, posterior selection model predictions for the test set.}
   \item{MSEPost}{If independent test set 'X2', 'Y2' is given, mean squared error of the posterior selection model predictions.}
 }
-\references{
-%% ~put references to the literature/web site here ~
-}
-\author{
-%%  ~~who you are~~
-}
-\note{
-%%  ~~further notes~~
-}
 
-%% ~Make other sections like Warning with \section{Warning }{....} ~
-
-\seealso{
-%% ~~objects to See Also as \code{\link{help}}, ~~~
-}
-\examples{
-}

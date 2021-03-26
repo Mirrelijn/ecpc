@@ -10,7 +10,7 @@ Fit hierarchical lasso using LOG penalty
 Fits a linear regression model penalised with a hierarchical lasso penalty, using a latent overlapping group (LOG) lasso penalty.
 }
 \usage{
-hierarchicalLasso(X, Y, grouping)
+hierarchicalLasso(X, Y, groupset)
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
@@ -22,8 +22,8 @@ nxp matrix with observed data
 %%     ~~Describe \code{Y} here~~
 nx1 vector with response data
 }
-  \item{grouping}{
-%%     ~~Describe \code{grouping} here~~
+  \item{groupset}{
+%%     ~~Describe \code{groupset} here~~
 list with hierarchical group indices
 }
 }
@@ -49,19 +49,4 @@ A list with the following elements;
 Yan, X., Bien, J. et al. (2017). Hierarchical sparse modeling: A choice of two group lasso formulations. Statistical Science 32 531-560.
 
 Jacob, L., Obozinski, G. and Vert, J.-P. (2009). Group lasso with overlap and graph lasso. In: Proceedings of the 26th annual international conference on machine learning 433-440. ACM.
-}
-\author{
-%%  ~~who you are~~
-}
-\note{
-%%  ~~further notes~~
-}
-
-%% ~Make other sections like Warning with \section{Warning }{....} ~
-
-\seealso{
-%% ~~objects to See Also as \code{\link{help}}, ~~~
-}
-\examples{
-
 }

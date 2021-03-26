@@ -13,14 +13,13 @@ Group hyperparameters are estimated with an empirical Bayes method of moments, p
 Various types of hypershrinkage may be used for various co-data, including overlapping groups, hierarchical groups and continuous co-data.
 }
 \usage{
-ecpc(Y, X, groupings, groupings.grouplvl = NaN, 
-hypershrinkage = c("ridge","lasso","hierLasso","lasso,ridge","hierLasso,ridge"), 
+ecpc(Y, X, groupsets, groupsets.grouplvl = NULL, hypershrinkage, 
 unpen = NULL, intrcpt = TRUE, model=c("linear","logistic","cox"), 
 postselection = "elnet,dense", maxsel = 10, 
-lambda = "CV", fold = 10, sigmasq = NaN, w = NaN, 
+lambda = NULL, fold = 10, sigmasq = NaN, w = NaN, 
 nsplits = 100, weights = TRUE, profplotRSS = F, Y2 = NaN, X2 = NaN, 
 compare = TRUE, mu = FALSE, normalise = FALSE, silent = FALSE,
-datablocks = NULL)
+datablocks = NULL)%,standardise_Y=FALSE)
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
@@ -32,17 +31,21 @@ Response data; n-dimensional vector (n: number of samples) for linear and logist
 %%     ~~Describe \code{X} here~~
 Observed data; (nxp)-dimensional matrix (p: number of covariates) with each row the observed high-dimensional feature vector of a sample.
 }
-  \item{groupings}{
-%%     ~~Describe \code{groupings} here~~
-Co-data groupings; list with m (m: number of groupings) groupings. Each grouping is a list of all groups in that grouping. Each group is a vector containing the indices of the covariates in that group.
+  \item{groupsets}{
+%%     ~~Describe \code{groupsets} here~~
+Co-data group sets; list with m (m: number of group sets) group sets. Each group set is a list of all groups in that set. Each group is a vector containing the indices of the covariates in that group.
 }
-  \item{groupings.grouplvl}{
-%%     ~~Describe \code{groupings.grouplvl} here~~
-(optional) Groupings on group level used in hypershrinkage; list of m elements (corresponding to 'groupings'), with NULL if there is no structure on group level, or with a list of groups containing the indices of groups of covariates in that group. May be used for hierarchical groups and to adaptively discretise continuous co-data, see \code{\link{obtainHierarchy}}.
+  \item{groupsets.grouplvl}{
+%%     ~~Describe \code{groupsets.grouplvl} here~~
+(optional) Group sets on group level used in hypershrinkage; list of m elements (corresponding to 'groupsets'), with NULL if there is no structure on group level, or with a list of groups containing the indices of groups of covariates in that group. May be used for hierarchical groups and to adaptively discretise continuous co-data, see \code{\link{obtainHierarchy}}.
 }
   \item{hypershrinkage}{
 %%     ~~Describe \code{hypershrinkage} here~~
-Type of shrinkage that is used on the group level; vector of m strings indicating the shrinkage type (or penalty) that is used for each of the m groupings. String may be of the simple form "type1", or "type1,type2", in which type1 is used to select groups and type2 to estimate the group weights of the selected groups. Possible hypershrinkage types are; ridge (default), lasso and hierLasso (hierarchical lasso using a latent overlapping group lasso penalty).
+Type of shrinkage that is used on the group level; vector of m strings indicating the shrinkage type (or penalty) that is used for each of the m group sets. String may be of the simple form "type1", or "type1,type2", in which type1 is used to select groups and type2 to estimate the group weights of the selected groups. Possible hypershrinkage types are:
+
+c("none","ridge","lasso","hierLasso","lasso,ridge","hierLasso,ridge"); 
+
+"none" for no hypershrinkage, "ridge" (default), "lasso" and "hierLasso" (hierarchical lasso using a latent overlapping group lasso penalty) for group selection possibly be combined with ridge shrinkage.
 }
   \item{unpen}{
 %%     ~~Describe \code{unpen} here~~
@@ -66,7 +69,7 @@ Maximum number of covariates to be selected a posteriori, in addition to all unp
 }
   \item{lambda}{
 %%     ~~Describe \code{lambda} here~~
-Global ridge penalty; if given, numeric value to fix the global ridge penalty and equivalently, the global prior variance.
+Global ridge penalty; if given, numeric value to fix the global ridge penalty and equivalently, the global prior variance. When not given, for linear, by default "ML" is used for estimation for maximum marginal likelihood estimation and "CV" for other models for cross-validation.
 }
   \item{fold}{
 %%     ~~Describe \code{fold} here~~
@@ -78,7 +81,7 @@ Number of folds used in inner cross-validation to estimate global ridge penalty 
 }
   \item{w}{
 %%     ~~Describe \code{w} here~~
-Grouping weights: m-dimensional vector. If given, grouping weights are fixed.
+Group set weights: m-dimensional vector. If given, group set weights are fixed.
 }
   \item{nsplits}{
 %%     ~~Describe \code{nsplits} here~~
@@ -119,10 +122,14 @@ Should output messages be suppressed (default FALSE)?
 %%     ~~Describe \code{normalise} here~~
 (optional) for multiple data types, the corresponding blocks of data may be given in datablocks; a list of B vectors of the indices of covariates in `X' that belong to each of the B data blocks. Unpenalised covariates should not be given as seperate block, but can be omitted or included in blocks with penalised covariates. Each datatype obtains a datatype-specific `tauglobal' as in multiridge.
 }
+%  \item{standardise_Y}{
+%%     ~~Describe \code{normalise} here~~
+%Should linear response be standardised (default FALSE)? Regression coefficients are scaled back before returning the %output.
+%}
 }
-\details{
-%%  ~~ If necessary, more details than the description above ~~
-}
+%\details{
+%%%  ~~ If necessary, more details than the description above ~~
+%}
 \value{
 %%  ~Describe the value returned
 %%  If it is a LIST, use
@@ -135,7 +142,7 @@ A list with the following elements:
   \item{tauglobal}{Estimated global prior variance; scalar (or vector with datatype-specific global prior variances when multiple `datablocks' are given).)}
   \item{gammatilde}{Estimated group weights before truncating negative weights to 0; vector of dimension the total number of groups.}
   \item{gamma}{Final estimated group weights; vector of dimension the total number of groups.}
-  \item{w}{Estimated groupings weights; m-dimensional vector.}
+  \item{w}{Estimated group set weights; m-dimensional vector.}
   \item{penalties}{Estimated multi-group ridge penalties; p-dimensinional vector.}
   \item{hyperlambdas}{Estimated hyperpenalty parameters used in hypershrinkage; m-dimensional vector.}
   \item{Ypred}{If independent test set 'X2' is given, predictions for the test set.}
@@ -157,21 +164,21 @@ If posterior selection is performed;
 %% ~put references to the literature/web site here ~
 Van Nee, Mirrelijn M., Lodewyk FA Wessels, and Mark A. van de Wiel. "Flexible co-data learning for high-dimensional prediction." arXiv preprint arXiv:2005.04010 (2020).
 
-van de Wiel, Mark A., Mirrelijn M. van Nee, and Armin Rauschenberger. "Fast cross-validation for multi-penalty ridge regression." arXiv preprint arXiv:2005.09301 (2020).
+Van de Wiel, Mark A., Mirrelijn M. van Nee, and Armin Rauschenberger. "Fast cross-validation for multi-penalty ridge regression." arXiv preprint arXiv:2005.09301 (2020).
 }
 \author{
 %%  ~~who you are~~
 Mirrelijn van Nee, Lodewyk Wessels, Mark van de Wiel
 }
-\note{
-%%  ~~further notes~~
-}
+%\note{
+%%%  ~~further notes~~
+%}
 
 %% ~Make other sections like Warning with \section{Warning }{....} ~
 
-\seealso{
-%% ~~objects to See Also as \code{\link{help}}, ~~~
-}
+%\seealso{
+%%% ~~objects to See Also as \code{\link{help}}, ~~~
+%}
 \examples{
 #####################
 # Simulate toy data #
@@ -189,43 +196,43 @@ indT1<-rep(1,p) #vector with group numbers all 1 (all simulated from same normal
 Dat<-simDat(n,p,n2,muBeta,varBeta,indT1,sigma=1,model='linear') 
 str(Dat) #Dat contains centered observed data, response data and regression coefficients
 
-##########################
-# Make co-data groupings #
-##########################
-#Grouping 1: G random groups
+###########################
+# Make co-data group sets #
+###########################
+#Group set 1: G random groups
 G <- 5 #number of groups
 #sample random categorical co-data:
-categoricalRandom <- sample(1:G,p,replace=TRUE) 
-#make grouping, i.e. list with G groups:
-groupingRandom <- lapply(1:G,function(g){which(categoricalRandom==g)}) 
+categoricalRandom <- as.factor(sample(1:G,p,TRUE))
+#make group set, i.e. list with G groups:
+groupsetRandom <- createGroupset(categoricalRandom)
 
-#Grouping 2: informative hierarchical grouping
+#Group set 2: informative hierarchical group set
 continuousCodata <- abs(Dat$beta) #use the magnitude of beta as continuous co-data
 #Use adaptive discretisation to find a good discretisation of the continuous co-data;
 # discretise in groups of covariates of various sizes:
-groupingHierarchical <- splitMedian(values=continuousCodata,index = 1:p,
+groupsetHierarchical <- splitMedian(values=continuousCodata,index = 1:p,
                         minGroupSize = 50,split="both") 
-# and obtain grouping on group level that defines the hierarchy:
-hierarchy.grouplevel <- obtainHierarchy(grouping = groupingHierarchical) 
+# and obtain group set on group level that defines the hierarchy:
+hierarchy.grouplevel <- obtainHierarchy(groupset = groupsetHierarchical) 
 #visualise hierarchical groups:
-#visualiseGrouping(Grouping = groupingHierarchical,grouping.grouplvl = hierarchy.grouplevel) 
+#visualiseGroupset(Groupset = groupsetHierarchical,groupset.grouplvl = hierarchy.grouplevel) 
  
 ############ 
 # Fit ecpc #
 ############
-#fit ecpc for the two groupings, with ridge hypershrinkage for grouping 1, 
-# and hierarchical lasso and ridge for grouping 2.
+#fit ecpc for the two group sets, with ridge hypershrinkage for group set 1, 
+# and hierarchical lasso and ridge for group set 2.
 tic<-proc.time()[[3]]
-fit <- ecpc(Y=Dat$Y,X=Dat$Xctd,groupings=list(groupingRandom,groupingHierarchical),
-           groupings.grouplvl=list(NULL,hierarchy.grouplevel),
+fit <- ecpc(Y=Dat$Y,X=Dat$Xctd,groupsets=list(groupsetRandom,groupsetHierarchical),
+           groupsets.grouplvl=list(NULL,hierarchy.grouplevel),
            hypershrinkage=c("ridge","hierLasso,ridge"),
            model="linear",maxsel=c(5,10,15,20),
            Y2=Dat$Y2,X2=Dat$X2ctd)
 toc <- proc.time()[[3]]-tic
 
 fit$tauglobal #estimated global prior variance
-fit$gamma #estimated group weights (concatenated for the groupings)
-fit$w #estimated grouping weights
+fit$gamma #estimated group weights (concatenated for the group sets)
+fit$w #estimated group set weights
 summary(fit$beta) #estimated regression coefficients
 summary(fit$betaPost) #estimated regression coefficients after posterior selection
 
@@ -240,8 +247,8 @@ fit$MSEPost #MSE on the test set of ecpc after posterior selection
 # rankBeta<-order(abs(Dat$beta)) #betas ranked in order of magnitude
 # 
 # #with multiple datatypes (given in datablocks) and informative groups
-# fit2 <- ecpc(Y=Dat$Y,X=Dat$Xctd[,rankBeta],groupings=list(list(1:75,76:150,151:225,226:300)),
-#              groupings.grouplvl=list(NULL),
+# fit2 <- ecpc(Y=Dat$Y,X=Dat$Xctd[,rankBeta],groupsets=list(list(1:75,76:150,151:225,226:300)),
+#              groupsets.grouplvl=list(NULL),
 #              hypershrinkage=c("none"),
 #              model="linear",maxsel=c(5,10,15,20),
 #              Y2=Dat$Y2,X2=Dat$X2ctd[,rankBeta],

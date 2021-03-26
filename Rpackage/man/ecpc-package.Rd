@@ -21,11 +21,4 @@ See \code{\link{ecpc}} for example code.
 
 Maintainer: \packageMaintainer{ecpc}
 }
-\references{
-}
-\seealso{
 
-}
-\examples{
-
-}

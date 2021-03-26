@@ -10,7 +10,8 @@ Simulate data
 Simulate toy data with linear or logistic response.
 }
 \usage{
-simDat(n, p, n2 = 20, muGrp, varGrp, indT, sigma = 1, model = c("linear","logistic"), flag = F)
+simDat(n, p, n2 = 20, muGrp, varGrp, indT, sigma = 1, 
+  model = c("linear","logistic"), flag = F)
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
@@ -51,9 +52,7 @@ Type of model.
 Should linear predictors and true response be plotted?
 }
 }
-\details{
-%%  ~~ If necessary, more details than the description above ~~
-}
+
 \value{
 %%  ~Describe the value returned
 %%  If it is a LIST, use
@@ -67,21 +66,7 @@ A list with
 \item{X2ctd}{Simulated observed data for test set}
 \item{Y2}{Simulated response data for test set}
 }
-\references{
-%% ~put references to the literature/web site here ~
-}
-\author{
-%%  ~~who you are~~
-}
-\note{
-%%  ~~further notes~~
-}
 
-%% ~Make other sections like Warning with \section{Warning }{....} ~
-
-\seealso{
-%% ~~objects to See Also as \code{\link{help}}, ~~~
-}
 \examples{
 # #required libraries
 # library(mvtnorm)
@@ -91,7 +76,8 @@ A list with
 # #simulate beta from two normal distributions; beta_k ~ N(mu_k,tau^2_k)
 # muGrp <- c(0,0.1) #mean (mu_1,mu_2)
 # varGrp <- c(0.05,0.01) #variance (tau^2_1,tau^2_2)
-# indT <- rep(c(1,2),each=15) #group number of each covariate; first half in group 1, second half in group 2
+# #group number of each covariate; first half in group 1, second half in group 2
+# indT <- rep(c(1,2),each=15) 
 #
 # dataLin <- simDat(n, p, n2 = 20, muGrp, varGrp, indT, sigma = 1, model = "linear", 
 #     flag = T)

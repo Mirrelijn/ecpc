@@ -12,7 +12,8 @@ Each group is then recursively split in two at the median co-data value, until s
 The discretised groups are used for adaptive discretisation of continuous co-data.
 }
 \usage{
-splitMedian(values, index, depth, minGroupSize = 50, first = T, split = "both")
+splitMedian(values, index=NULL, depth=NULL, minGroupSize = 50, first = T, 
+  split = c("both","lower","higher"))
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
@@ -34,15 +35,12 @@ Minimum group size that each group of covariates should have.
 }
   \item{split}{
 %%     ~~Describe \code{split} here~~
-"both" or "lower": should both split groups of covariates be further split, or only the group of covariates that corresponds to the lower continuous co-data group?
+"both", "lower" or "higher": should both split groups of covariates be further split, or only the group of covariates that corresponds to the lower or higher continuous co-data group?
 }
   \item{first}{
 %%     ~~Describe \code{first} here~~
 Do not change, recursion help variable.
 }
-}
-\details{
-%%  ~~ If necessary, more details than the description above ~~
 }
 \value{
 %%  ~Describe the value returned
@@ -50,34 +48,29 @@ Do not change, recursion help variable.
 %%  \item{comp1 }{Description of 'comp1'}
 %%  \item{comp2 }{Description of 'comp2'}
 %% ...
-A list with groups of covariates, which may be used as grouping in ecpc.
+A list with groups of covariates, which may be used as group set in ecpc.
 }
-\references{
-%% ~put references to the literature/web site here ~
-}
-\author{
-%%  ~~who you are~~
-}
-\note{
-%%  ~~further notes~~
-}
+
 
 %% ~Make other sections like Warning with \section{Warning }{....} ~
 
 \seealso{
 %% ~~objects to See Also as \code{\link{help}}, ~~~
-Use \code{\link{obtainHierarchy}} to obtain a grouping on group level defining the hierarchy for adaptive discretisation of continuous co-data.
+Use \code{\link{obtainHierarchy}} to obtain a group set on group level defining the hierarchy for adaptive discretisation of continuous co-data.
 }
 \examples{
 
 cont.codata <- seq(0,1,length.out=20) #continuous co-data
-grouping1 <- splitMedian(values=cont.codata,minGroupSize=5) #full tree with minimum group size 5
-grouping2 <- splitMedian(values=cont.codata,split="lower",minGroupSize=5) #only split at lower continous co-data group
+#full tree with minimum group size 5
+groupset1 <- splitMedian(values=cont.codata,minGroupSize=5) 
+#only split at lower continous co-data group
+groupset2 <- splitMedian(values=cont.codata,split="lower",minGroupSize=5) 
 
 part <- sample(1:length(cont.codata),15) #discretise only for a part of the continuous co-data
 cont.codata[-part] <- NaN #suppose rest is missing
-grouping3 <- splitMedian(values=cont.codata[part],index=part,minGroupSize=5) #make grouping of non-missing values
-grouping3 <- c(grouping3,list(which(is.nan(cont.codata)))) #add missing data group
+#make group set of non-missing values
+groupset3 <- splitMedian(values=cont.codata[part],index=part,minGroupSize=5) 
+groupset3 <- c(groupset3,list(which(is.nan(cont.codata)))) #add missing data group
 
 
 }

@@ -46,9 +46,9 @@ Should output messages be suppressed (default FALSE)?
   Additional arguments used in \code{\link{ecpc}}.
 }
 }
-\details{
-%%  ~~ If necessary, more details than the description above ~~
-}
+%\details{
+%%%  ~~ If necessary, more details than the description above ~~
+%}
 \value{
 %%  ~Describe the value returned
 %%  If it is a LIST, use
@@ -58,24 +58,24 @@ Should output messages be suppressed (default FALSE)?
 A list with the following elements:
 \item{ecpc.fit}{List with the ecpc model fit in each fold.}
 \item{dfPred}{Data frame with information about out-of-bag predictions.}
-\item{dfGrps}{Data frame with information about estimated group and grouping weights across folds.}
+\item{dfGrps}{Data frame with information about estimated group and group set weights across folds.}
 \item{dfCVM}{Data frame with cross-validated performance metric.}
 }
-\references{
-%% ~put references to the literature/web site here ~
-}
-\author{
-%%  ~~who you are~~
-}
-\note{
-%%  ~~further notes~~
-}
+%\references{
+%%% ~put references to the literature/web site here ~
+%}
+%\author{
+%%%  ~~who you are~~
+%}
+%\note{
+%%%  ~~further notes~~
+%}
 
 %% ~Make other sections like Warning with \section{Warning }{....} ~
 
-\seealso{
-%% ~~objects to See Also as \code{\link{help}}, ~~~
-}
+%\seealso{
+%%% ~~objects to See Also as \code{\link{help}}, ~~~
+%}
 \examples{
 #####################
 # Simulate toy data #
@@ -94,25 +94,25 @@ Dat<-simDat(n,p,n2,muBeta,varBeta,indT1,sigma=1,model='linear')
 str(Dat) #Dat contains centered observed data, response data and regression coefficients
 
 ##########################
-# Make co-data groupings #
+# Make co-data group sets #
 ##########################
-#Grouping 1: G random groups
+#Group set 1: G random groups
 G <- 5 #number of groups
 #sample random categorical co-data:
-categoricalRandom <- sample(1:G,p,replace=T) 
-#make grouping, i.e. list with G groups:
-groupingRandom <- lapply(1:G,function(g){which(categoricalRandom==g)}) 
+categoricalRandom <- as.factor(sample(1:G,p,TRUE))
+#make group set, i.e. list with G groups:
+groupsetRandom <- createGroupset(categoricalRandom)
 
-#Grouping 2: informative hierarchical grouping
+#Group set 2: informative hierarchical group set
 continuousCodata <- abs(Dat$beta) #use the magnitude of beta as continuous co-data
 #Use adaptive discretisation to find a good discretisation of the continuous co-data;
 # discretise in groups of covariates of various sizes:
-groupingHierarchical <- splitMedian(values=continuousCodata,index = 1:p,
+groupsetHierarchical <- splitMedian(values=continuousCodata,index = 1:p,
                         minGroupSize = 50,split="both") 
-# and obtain grouping on group level that defines the hierarchy:
-hierarchy.grouplevel <- obtainHierarchy(grouping = groupingHierarchical) 
+# and obtain groupset on group level that defines the hierarchy:
+hierarchy.grouplevel <- obtainHierarchy(groupset = groupsetHierarchical) 
 #visualise hierarchical groups:
-#visualiseGrouping(Grouping = groupingHierarchical,grouping.grouplvl = hierarchy.grouplevel) 
+#visualiseGroupset(Groupset = groupsetHierarchical,groupset.grouplvl = hierarchy.grouplevel) 
  
 #######################
 # Cross-validate ecpc #
@@ -120,31 +120,37 @@ hierarchy.grouplevel <- obtainHierarchy(grouping = groupingHierarchical)
 # tic<-proc.time()[[3]]
 # cv.fit <- cv.ecpc(type.measure="MSE",outerfolds=10,
 #                   Y=Dat$Y,X=Dat$Xctd,
-#                   groupings=list(groupingRandom,groupingHierarchical),
-#                   groupings.grouplvl=list(NULL,hierarchy.grouplevel),
+#                   groupsets=list(groupsetRandom,groupsetHierarchical),
+#                   groupsets.grouplvl=list(NULL,hierarchy.grouplevel),
 #                   hypershrinkage=c("ridge","hierLasso,ridge"),
 #                   model="linear",maxsel=c(5,10,15,20))
 # toc <- proc.time()[[3]]-tic
 #
 # str(cv.fit$ecpc.fit) #list containing the model fits on the folds
 # str(cv.fit$dfPred) #data frame containing information on the predictions
-# cv.fit$dfCVM #data frame with the cross-validated performance for ecpc with/without posterior selection and ordinary ridge
+# cv.fit$dfCVM #data frame with the cross-validated performance for ecpc 
+#              #with/without posterior selection and ordinary ridge
 
 ################
 # Plot results #
 ################
-# #Plot estimated grouping weights across folds
-# visualiseGroupingweights(dfGrps = cv.fit$dfGrps,GroupingNames = c("random","hierarchical"),boxplot=F)
+# #Plot estimated group set weights across folds
+# visualiseGroupsetweights(dfGrps = cv.fit$dfGrps,
+#       GroupsetNames = c("random","hierarchical"),boxplot=F)
 # 
 # #Plot estimated group weights across folds
-# #Grouping 1:
-# visualiseGroupweights(dfGrps = cv.fit$dfGrps[cv.fit$dfGrps$Grouping==1,],Grouping=groupingRandom,boxplot = F)
+# #Group set 1:
+# visualiseGroupweights(dfGrps = cv.fit$dfGrps[cv.fit$dfGrps$Groupset==1,],
+#                       Groupset=groupsetRandom,boxplot = F)
 # 
-# #Grouping 2; plot group weight versus continuous co-data value:
-# visualiseGroupweights(dfGrps = cv.fit$dfGrps[cv.fit$dfGrps$Grouping==2,],Grouping=groupingHierarchical,
-#                       values=continuousCodata,grouping.grouplvl = hierarchy.grouplevel,boxplot = F)
+# #Group set 2; plot group weight versus continuous co-data value:
+# visualiseGroupweights(dfGrps = cv.fit$dfGrps[cv.fit$dfGrps$Groupset==2,],
+#                       Groupset=groupsetHierarchical,values=continuousCodata,
+#                       groupset.grouplvl = hierarchy.grouplevel,boxplot = F)
 # #visualise which hierarchical groups are selected in a specific fold:
 # fold <- 1
-# visualiseGrouping(Grouping = groupingHierarchical,grouping.grouplvl = hierarchy.grouplevel,
-#                   groupweights = cv.fit$dfGrps$Group.weight[cv.fit$dfGrps$Grouping==2&cv.fit$dfGrps$Fold==fold]) 
+# visualiseGroupset(Groupset = groupsetHierarchical,
+#                   groupset.grouplvl = hierarchy.grouplevel,
+#                   groupweights = cv.fit$dfGrps$Group.weight[cv.fit$dfGrps$Groupset==2&
+#                   cv.fit$dfGrps$Fold==fold]) 
 }

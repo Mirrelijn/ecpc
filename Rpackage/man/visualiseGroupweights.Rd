@@ -10,7 +10,7 @@ Visualise estimated group weights
 Plot group weights from multiple cross-validation folds.
 }
 \usage{
-visualiseGroupweights(dfGrps, Grouping, grouping.grouplvl, values, 
+visualiseGroupweights(dfGrps, Groupset, groupset.grouplvl, values, 
                       widthBoxplot = 0.05, boxplot = T, jitter = T, 
                       ps = 1.5, ls = 1)
 }
@@ -23,12 +23,12 @@ Data frame containing the following variables;
   'Group.weight': group weight of each group;
   'Fold': number indicating which fold in the cross-validation is used.
 }
-  \item{Grouping}{
-%%     ~~Describe \code{Grouping} here~~
+  \item{Groupset}{
+%%     ~~Describe \code{Groupset} here~~
 List of G elements containing covariate indices for each group
 }
-  \item{grouping.grouplvl}{
-%%     ~~Describe \code{grouping.grouplvl} here~~
+  \item{groupset.grouplvl}{
+%%     ~~Describe \code{groupset.grouplvl} here~~
 (optional): groups on group level, e.g. defining a hierarchical structure. 
 }
   \item{values}{
@@ -56,9 +56,6 @@ Point size.
 Line size.
 }
 }
-\details{
-%%  ~~ If necessary, more details than the description above ~~
-}
 \value{
 %%  ~Describe the value returned
 %%  If it is a LIST, use
@@ -67,21 +64,12 @@ Line size.
 %% ...
 Plot in ggplot object.
 }
-\references{
-%% ~put references to the literature/web site here ~
-}
-\author{
-%%  ~~who you are~~
-}
-\note{
-%%  ~~further notes~~
-}
 
 %% ~Make other sections like Warning with \section{Warning }{....} ~
 
 \seealso{
 %% ~~objects to See Also as \code{\link{help}}, ~~~
-\code{\link{visualiseGrouping}} to visualise groupings and \code{\link{visualiseGroupingweights}} to plot estimated grouping weights.
+\code{\link{visualiseGroupset}} to visualise group sets and \code{\link{visualiseGroupsetweights}} to plot estimated group set weights.
 }
 \examples{
 # #required libraries
@@ -89,22 +77,26 @@ Plot in ggplot object.
 # library(dplyr)
 #
 # #discrete groups
-# grouping1 <- list(1:20,21:40)
+# groupset1 <- list(1:20,21:40)
 # dfGrps1 <- data.frame(Group=as.factor(rep(c(1,2),each=10)),
 #                      Group.weight=c(rnorm(10,0.5,0.01),rnorm(10,2,0.05)),
 #                      Fold=rep(1:10,2))
-# visualiseGroupweights(dfGrps1, Grouping=grouping1)
+# visualiseGroupweights(dfGrps1, Groupset=groupset1)
 # 
 # #continous co-data groups
 # cont.codata <- seq(0,1,length.out=40) #continuous co-data
-# grouping2 <- splitMedian(values=cont.codata,split="lower",minGroupSize=10) #only split at lower continous co-data group
-# grouping.grouplvl <- obtainHierarchy(grouping2) #obtain groups on group level defining the hierarchy
+# #only split at lower continous co-data group
+# groupset2 <- splitMedian(values=cont.codata,split="lower",minGroupSize=10) 
+# #obtain groups on group level defining the hierarchy
+# groupset.grouplvl <- obtainHierarchy(groupset2) 
 # 
 # #simulate random group weights around 1
-# dfGrps2 <- data.frame(Group=as.factor(rep(1:length(grouping2),each=10)),
-#                       Group.weight=c(rnorm(10*length(grouping2),1,0.01)),
-#                       Fold=rep(1:10,length(grouping2))) 
-# visualiseGroupweights(dfGrps2, Grouping=grouping2, grouping.grouplvl=grouping.grouplvl) #plot group weights per group
-# visualiseGroupweights(dfGrps2, Grouping=grouping2, grouping.grouplvl=grouping.grouplvl, 
-#                       values=cont.codata) #plot group weights per leaf group in the hierarchical tree
+# dfGrps2 <- data.frame(Group=as.factor(rep(1:length(groupset2),each=10)),
+#                       Group.weight=c(rnorm(10*length(groupset2),1,0.01)),
+#                       Fold=rep(1:10,length(groupset2))) 
+# #plot group weights per group
+# visualiseGroupweights(dfGrps2, Groupset=groupset2, groupset.grouplvl=groupset.grouplvl) 
+# #plot group weights per leaf group in the hierarchical tree
+# visualiseGroupweights(dfGrps2, Groupset=groupset2, groupset.grouplvl=groupset.grouplvl, 
+#                       values=cont.codata) 
 }
