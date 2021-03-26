@@ -79,7 +79,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
     }
   }
   levelsY<-NaN
-  if(length(lambda)==0) lambda <- "CV"#ifelse(model=="linear","ML","CV")
+  if(length(lambda)==0) lambda <- "CV,penalized"#ifelse(model=="linear","ML","CV")
   if(model=="logistic"){
     levelsY<-cbind(c(0,1),c(0,1))
     if(lambda=="ML"){
@@ -414,7 +414,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
                                                 standardize = F,intercept=intrcpt,
                                                 penalty.factor=penfctr,keep=T) #alpha=0 for ridge
                  }
-               }else{ #use penalized to do CV
+               }else if(grepl("penalized",lambda)){ #use penalized to do CV
                  Xsvd <- svd(X[,penfctr!=0])
                  XF <- X[,penfctr!=0]%*% Xsvd$v
                  Xunpen <- cbind(X[,penfctr==0]) #if empty vector, no unpenalised and no intercept
@@ -447,16 +447,44 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
                      warning("Cross-validated global penalty lambda was <10-5 and set to 1")
                    }
                  }
+               }else{ #do CV with internal function .CVridge
+                 #compute range lambda
+                 lambdaGLM<-glmnet(X,Y,alpha=0,family=fml,intercept = intrcpt,
+                                   standardize = F,penalty.factor = penfctr) #alpha=0 for ridge
+                 lambdarange <- lambdaGLM$lambda/sd_y*n
+                 
+                 #perform CV
+                 if(length(unpen)==0){
+                   Xbl <- X%*%t(X)
+                   if(grepl("range",lambda)){ #fit for whole range of lambda
+                     CVfit <- .CVridge(lambdas=lambdarange, Y=Y,Xbl=Xbl,intrcpt = intrcpt,
+                                       model=model)
+                   }else{ #use optim
+                     CVfit <- .CVridge2(lambdarange=range(lambdarange),Y=Y,Xbl=Xbl,intrcpt = intrcpt,
+                                         model=model)
+                   }
+                 }else{
+                   Xbl <- X[,penfctr!=0]%*%t(X[,penfctr!=0])
+                   if(grepl("range",lambda)){ #fit for whole range of lambda
+                     CVfit <- .CVridge(lambdas=lambdarange, Y=Y,Xbl=Xbl,intrcpt = intrcpt,
+                                     model=model,Xunpen = X[,penfctr==0])
+                   }else{ #use optim
+                     CVfit <- .CVridge2(lambdarange=range(lambdarange), Y=Y,Xbl=Xbl,intrcpt = intrcpt,
+                                         model=model,Xunpen = X[,penfctr==0])
+                   }
+                 }
                }
                
                if((!is.nan(compare) & grepl("CV",compare)) | (!is.nan(compare) & compare==T)){
                  # lambdaridge<-lambdaGLM$lambda.min/sd_y*n #using glmnet
                  if(grepl("glmnet",lambda)) lambdaridge <- lambdaGLM$lambda.min/sd_y*n #fitted lambda
-                 else lambdaridge <- ol1$lambda
+                 else if(grepl("penalized",lambda)) lambdaridge <- ol1$lambda
+                 else lambdaridge <- CVfit$lambda.min
                } 
                if(grepl("CV",lambda)){
                  if(grepl("glmnet",lambda)) lambda <- lambdaGLM$lambda.min/sd_y*n #using glmnet
-                 else lambda <- ol1$lambda #using penalized
+                 else if(grepl("penalized",lambda)) lambda <- ol1$lambda #using penalized
+                 else lambda <- CVfit$lambda.min
                  sigmahat <- sigmasq
                  muhat[,1] <- mutrgt
                  gamma[,1] <- 1/lambda
@@ -498,7 +526,8 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
              muinitp[(1:p)%in%unpen] <- 0
              glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
                                  lambda = lambda/n*sd_y,family=fml,
-                                 offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], intercept = intrcpt, standardize = F,
+                                 offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], 
+                                 intercept = intrcpt, standardize = F,
                                  penalty.factor=penfctr,thresh = 10^-10)
              betasinit <- as.vector(glmGRtrgt$beta)
              betasinit[!((1:p)%in%unpen)] <- betasinit[!((1:p)%in%unpen)] + muinitp[!((1:p)%in%unpen)]
@@ -532,7 +561,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
                                         standardize = F,intercept=intrcpt,
                                         penalty.factor=penfctr,keep=T) #alpha=0 for ridge
                  }
-               }else{ #use penalized to do CV
+               }else if(grepl("penalized",lambda)){ #use penalized to do CV
                  Xsvd <- svd(X[,penfctr!=0])
                  XF <- X[,penfctr!=0]%*% Xsvd$v
                  if(intrcpt){
@@ -563,14 +592,43 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
                    }
                  }
                  
+               }else{ #do CV with internal function .CVridge
+                 #compute range lambda
+                 lambdaGLM<-glmnet(X,Y,alpha=0,family=fml,intercept = intrcpt,
+                                   standardize = F,penalty.factor = penfctr) #alpha=0 for ridge
+                 lambdarange <- lambdaGLM$lambda/sd_y*n
+                 
+                 #perform CV
+                 if(length(unpen)==0){
+                   Xbl <- X%*%t(X)
+                   if(grepl("range",lambda)){ #fit for whole range of lambda
+                     CVfit <- .CVridge(lambdas=lambdarange, Y=Y,Xbl=Xbl,intrcpt = intrcpt,
+                                       model=model)
+                   }else{ #use optim
+                     CVfit <- .CVridge2(lambdarange=range(lambdarange),Y=Y,Xbl=Xbl,intrcpt = intrcpt,
+                                        model=model)
+                   }
+                 }else{
+                   Xbl <- X[,penfctr!=0]%*%t(X[,penfctr!=0])
+                   if(grepl("range",lambda)){ #fit for whole range of lambda
+                     CVfit <- .CVridge(lambdas=lambdarange, Y=Y,Xbl=Xbl,intrcpt = intrcpt,
+                                       model=model,Xunpen = X[,penfctr==0])
+                   }else{ #use optim
+                     CVfit <- .CVridge2(lambdarange=range(lambdarange), Y=Y,Xbl=Xbl,intrcpt = intrcpt,
+                                        model=model,Xunpen = X[,penfctr==0])
+                   }
+                 }
+                 
                }
                if((!is.nan(compare) & grepl("CV",compare)) | (!is.nan(compare) & compare==T)){
                  if(grepl("glmnet",lambda)) lambdaridge <- lambdaGLM$lambda.min/sd_y*n #fitted lambda
-                 else lambdaridge <- ol1$lambda
+                 else if(grepl("penalized",lambda)) lambdaridge <- ol1$lambda
+                 else lambdaridge <- CVfit$lambda.min
                } 
                if(grepl("CV",lambda)){
                  if(grepl("glmnet",lambda)) lambda <- lambdaGLM$lambda.min/sd_y*n #using glmnet
-                 else lambda <- ol1$lambda #using penalized
+                 else if(grepl("penalized",lambda)) lambda <- ol1$lambda #using penalized
+                 else lambda <- CVfit$lambda.min
                } 
                #print(lambda)
              }
@@ -652,7 +710,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
                                         standardize = F,
                                         penalty.factor=penfctr,keep=T) #alpha=0 for ridge
                  }
-               }else{ #use penalized to do CV
+               }else if(grepl("penalized",lambda)){ #use penalized to do CV
                  Xsvd <- svd(X[,penfctr!=0])
                  XF <- X[,penfctr!=0]%*% Xsvd$v
                  Xunpen <- cbind(X[,penfctr==0]) #if empty vector, no unpenalised and no intercept
@@ -678,14 +736,43 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
                      warning("Cross-validated global penalty lambda was <10-5 and set to 1")
                    }
                  }
+               }else{ #do CV with internal function .CVridge
+                 #compute range lambda
+                 lambdaGLM<-glmnet(X,Y,alpha=0,family=fml,
+                                   standardize = F,penalty.factor = penfctr) #alpha=0 for ridge
+                 lambdarange <- lambdaGLM$lambda/sd_y*n
+                 
+                 #perform CV
+                 if(length(unpen)==0){
+                   Xbl <- X%*%t(X)
+                   if(grepl("range",lambda)){ #fit for whole range of lambda
+                     CVfit <- .CVridge(lambdas=lambdarange, Y=Y,Xbl=Xbl,
+                                       model=model)
+                   }else{ #use optim
+                     CVfit <- .CVridge2(lambdarange=range(lambdarange),Y=Y,Xbl=Xbl,
+                                        model=model)
+                   }
+                 }else{
+                   Xbl <- X[,penfctr!=0]%*%t(X[,penfctr!=0])
+                   if(grepl("range",lambda)){ #fit for whole range of lambda
+                     CVfit <- .CVridge(lambdas=lambdarange, Y=Y,Xbl=Xbl,
+                                       model=model,Xunpen = X[,penfctr==0])
+                   }else{ #use optim
+                     CVfit <- .CVridge2(lambdarange=range(lambdarange), Y=Y,Xbl=Xbl,
+                                        model=model,Xunpen = X[,penfctr==0])
+                   }
+                 }
+                 
                }
                if((!is.nan(compare) & grepl("CV",compare))| (!is.nan(compare) & compare==T)){
                  if(grepl("glmnet",lambda)) lambdaridge <- lambdaGLM$lambda.min/sd_y*n #fitted lambda
-                 else lambdaridge <- ol1$lambda
+                 else if(grepl("penalized",lambda)) lambdaridge <- ol1$lambda
+                 else lambdaridge <- CVfit$lambda.min
                } 
                if(grepl("CV",lambda)){
                  if(grepl("glmnet",lambda)) lambda <- lambdaGLM$lambda.min/sd_y*n #fitted lambda
-                 else lambda <- ol1$lambda
+                 else if(grepl("penalized",lambda)) lambda <- ol1$lambda
+                 else lambda <- CVfit$lambda.min
                } 
              }
              sigmahat <- 1 #sigma not in model for cox: set to 1
@@ -2990,7 +3077,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
 }
 
 #Produce balanced folds----
-produceFolds <- function(nsam,outerfold,response,model=c("logistic", "survival", "other"),
+produceFolds <- function(nsam,outerfold,response,model=c("logistic", "cox", "other"),
                          balance=TRUE,fixedfolds=F){
   if(fixedfolds) set.seed(3648310) #else set.seed(NULL)
   if(length(model)>1) model <- "logistic"
@@ -3006,7 +3093,7 @@ produceFolds <- function(nsam,outerfold,response,model=c("logistic", "survival",
     }
     )} else {  #balanced folds
       if(model=="logistic") if(class(response)=="factor") nev <- which((as.numeric(response)-1)==1) else nev <- which(response==1)  
-      if(model=="survival") nev <- which(response[,1]==1)    
+      if(model=="cox") nev <- which(response[,2]==1)    
       nsamev <- length(nev) 
       randev<-sample(nev)
       grs1 <- floor(nsamev/outerfold)
@@ -3031,6 +3118,303 @@ produceFolds <- function(nsam,outerfold,response,model=c("logistic", "survival",
       folds <- lapply(1:outerfold,function(i) c(foldsev[[i]],foldsnonev[[i]]))
     }
   return(folds)
+}
+
+#Create group set----
+#This function is derived from CreatePartition from the GRridge package, available on Bioconductor
+#Author: Mark van de Wiel
+#The function name and some variable names are changed to match those in the ecpc-package
+
+createGroupset <- function(values,index=NULL,grsize=NULL,ngroup=10,
+                           decreasing=TRUE,uniform=FALSE,
+                           minGroupSize = 50){
+  #values <- 1:67;ngroup=10;index=NULL;grsize=NULL;decreasing=TRUE;uniform=TRUE;mingr=50
+  #values <- sdsF;grsize=5000;decreasing=FALSE;uniform=TRUE
+  if(is.factor(values)){
+    firstcl <- lapply(as.character(levels(values)),function(xg) which(values==xg))
+    names(firstcl) <- levels(values)
+  }else if(is.logical(values)){
+    firstcl <- lapply(c(T,F),function(x) which(values==x))
+    names(firstcl) <- c("True","False")
+  } else {
+    if(is.numeric(values)){
+      if(uniform){
+        if(is.null(grsize)){
+          grsize <- floor(length(values)/ngroup)
+          print(paste("Group size set to:",grsize))
+        } else {
+          print(paste("Group size",grsize))
+        }
+        if(decreasing) {
+          print("Sorting values in decreasing order, assuming small values are LESS relevant")
+          orderp2 <- order(values,decreasing=TRUE) 
+          lroep <- length(values)
+        } else {
+          print("Sorting values in increasing order, assuming small values are MORE relevant")
+          orderp2 <- order(values,decreasing=FALSE) 
+          lroep <- length(values)   
+        }
+        if(!is.null(grsize)){
+          ngr <- floor(lroep/grsize)
+          firstcl <- lapply(1:ngr,function(xg) {
+            if(xg < ngr) els <- orderp2[(1+(xg-1)*grsize):(xg*grsize)] else 
+              els <- orderp2[(1+(xg-1)*grsize):lroep]
+            return(els)
+          }
+          )
+        } else {
+          ngr <- ngroup
+          remain <- length(values) %% ngroup
+          firstcl <- lapply(1:ngr,function(xg) {
+            if(xg <= remain) els <- orderp2[(1+(xg-1)*(grsize+1)):(xg*(grsize+1))] else 
+              els <- orderp2[(1+(xg-1-remain)*grsize+remain*(grsize+1)):((xg-remain)*grsize+remain*(grsize+1))]
+            return(els)
+          }
+          ) 
+          
+        }  
+        names(firstcl) <- sapply(1:length(firstcl),function(i) paste("group",i,sep=""))
+      } else {
+        if(decreasing) {
+          print("Sorting values in decreasing order, assuming small values are LESS relevant")
+          orderp2 <- order(values,decreasing=TRUE) 
+          lroep <- length(values)
+        } else {
+          print("Sorting values in increasing order, assuming small values are MORE relevant")
+          orderp2 <- order(values,decreasing=FALSE) 
+          lroep <- length(values)   
+        }
+        p <- length(values) 
+        if(ngroup*minGroupSize >= p) {
+          print("ERROR: Number of groups (ngroup) times minimal group size (minGroupSize) is larger 
+          than number of variables. Please use uniform = TRUE or decrease either ngroup or minGroupSize.")
+          return(NULL)  
+        }
+        povermin <- p/minGroupSize
+        parint <-povermin^{1/ngroup}
+        
+        lefts <- povermin+1
+        gfun2 <- function(x){1-x^(ngroup+1) - lefts*(1-x)}
+        root <- uniroot(f=gfun2, lower=1.000001,upper=parint)$root
+        
+        grs <- sapply(1:ngroup,function(i) if(i==1) floor(minGroupSize*root^i) else round(minGroupSize*root^i)) 
+        sm <- sum(grs)
+        grs[ngroup] <- grs[ngroup] -(sm-p)
+        print("Summary of group sizes:")
+        print(summary(grs))
+        cumul <- cumsum(c(0,grs))
+        firstcl <- lapply(1:ngroup,function(xg) {
+          els <- orderp2[(cumul[xg]+1):cumul[xg+1]]
+          return(els)
+        }
+        )
+        names(firstcl) <- sapply(1:length(firstcl),function(i) paste("group",i,sep=""))
+      }
+    } else {  #assume character
+      if(!is.character(values)){
+        print("Argument values is not correctly specified")
+        return(NULL)
+      } else {
+        firstcl <- lapply(unique(values),function(x) which(values==x))
+        names(firstcl) <- unique(values)
+      }
+    }
+  }
+  if(!is.null(index)){ #remapping 
+    if(length(values) != length(index)){
+      print("ERROR: Length of values does not match length of index")
+      return(NULL)
+    } else {
+      firstcl <- lapply(firstcl,function(vector) index[vector])
+    }
+  }
+  print("Summary of group sizes:")
+  print(unlist(lapply(firstcl,length)))
+  return(firstcl)
+}
+
+#Fast CV for one ridge penalty on range of lambda----
+.CVridge <- function(lambdas, Y, Xbl, Xunpen=NULL, fold=10,model,intrcpt=T){
+  #produce folds----
+  
+  n <- length(Y)
+  if(model=="cox") n <- dim(Y)[1]
+  folds <- produceFolds(nsam=n,outerfold = fold,
+                        response=Y,model=model,balance=T,fixedfolds = F)
+  
+  switch(model,
+         'linear'={
+           #for linear: CVM is the MSE
+           CVM <- sapply(lambdas,function(lam){
+             Ypred <- rep(NaN,length(Y))
+             for(i in 1:length(folds)){
+               #fit ridge====
+               fit <- .IWLSridge(Xbl[-folds[[i]],-folds[[i]]]/lam,Y=Y[-folds[[i]]], 
+                                 model=model,intercept=intrcpt, 
+                                 X1=Xunpen[-folds[[i]],]) #Fit. fit$etas contains the n linear predictors
+               #compute predictions====
+               Ypred[folds[[i]]] <- .predictIWLS(IWLSfit=fit,X1new=Xunpen[folds[[i]],], 
+                                                 Sigmanew = Xbl[folds[[i]],-folds[[i]]]/lam)
+               
+             }
+             
+             #compute CVM for this lambda====
+             MSE <- mean((Y-Ypred)^2)
+             return(MSE)
+           })
+           
+         },
+         'logistic'={
+           #for logistic: CVM is the deviance;
+           #-2loglik(\hat{\eta}) + 2loglik(saturated model) = -2loglik(\hat{\eta})
+           CVM <- sapply(lambdas,function(lam){
+             lp <- rep(NaN,length(Y))
+             for(i in 1:length(folds)){
+               #fit ridge====
+               fit <- .IWLSridge(Xbl[-folds[[i]],-folds[[i]]]/lam,Y=Y[-folds[[i]]], 
+                                 model=model,intercept=intrcpt, 
+                                 X1=Xunpen[-folds[[i]],]) #Fit. fit$etas contains the n linear predictors
+               #compute linear predictors====
+               lp[folds[[i]]] <- .predictIWLS(IWLSfit=fit,X1new=Xunpen[folds[[i]],], 
+                                                 Sigmanew = Xbl[folds[[i]],-folds[[i]]]/lam)
+               
+             }
+             #translate linear predictors to predictions
+             Ypred <- 1/(1+exp(-lp))
+             
+             #compute CVM for this lambda====
+             extremes <- Ypred==0 || Ypred == 1
+             CVM <- -2 * sum(Y[!extremes]*log(Ypred[!extremes])+
+                               (1-Y[!extremes])*log(1-Ypred[!extremes]))
+             return(CVM)
+           })
+           
+         },
+         'cox'={
+           #for cox: CVM is the minus partial likelihood;
+           CVM <- sapply(lambdas,function(lam){
+             lp <- rep(NaN,dim(Y)[1])
+             for(i in 1:length(folds)){
+               #fit ridge====
+               fit <- .IWLSCoxridge(Xbl[-folds[[i]],-folds[[i]]]/lam,Y=Y[-folds[[i]],], 
+                                 X1=Xunpen[-folds[[i]],]) 
+               
+               #compute linear predictors====
+               lp[folds[[i]]] <- .predictIWLS(IWLSfit=fit,X1new=Xunpen[folds[[i]],], 
+                                              Sigmanew = Xbl[folds[[i]],-folds[[i]]]/lam)
+               
+             }
+             
+             #compute CVM for this lambda====
+             #for Cox survival: the CVM is minus log partial likelihood
+             CVM <- -sum(sapply(which(Y[,2]==1),function(i){
+               lp[i] - log(sum(exp(lp[Y[,1]>=Y[i,1]])))
+             }))
+
+             return(CVM)
+           })
+           plot(lambdas,CVM)
+         }
+  )
+  
+  #find minimiser lambda
+  lambda.min <- lambdas[which.min(CVM)]
+
+  return(list("lambdas"=lambdas,
+              "CVM"=CVM,
+              "lambda.min"=lambda.min))
+
+}
+
+#Fast CV for one ridge penalty optimised over range of lambda----
+.CVridge2 <- function(lambdarange,Y, Xbl, Xunpen=NULL, fold=10,
+                      model,intrcpt=T,minlam=10^-4){
+  #produce folds----
+  
+  n <- length(Y)
+  if(model=="cox") n <- dim(Y)[1]
+  folds <- produceFolds(nsam=n,outerfold = fold,
+                        response=Y,model=model,balance=T,fixedfolds = F)
+  CVM <- function(lam){
+    lam <- exp(lam)
+    switch(model,
+           'linear'={
+             #for linear: CVM is the MSE
+             Ypred <- unlist(sapply(1:length(folds),function(i){
+               
+               #fit ridge====
+               fit <- .IWLSridge(Xbl[-folds[[i]],-folds[[i]]]/lam,Y=Y[-folds[[i]]], 
+                                 model=model,intercept=intrcpt, 
+                                 X1=Xunpen[-folds[[i]],]) #Fit. fit$etas contains the n linear predictors
+               #compute predictions====
+               Ypred <- .predictIWLS(IWLSfit=fit,X1new=Xunpen[folds[[i]],], 
+                                     Sigmanew = Xbl[folds[[i]],-folds[[i]]]/lam)
+               
+               
+               return(Ypred)
+             }))
+             #compute CVM for this lambda====
+             CVM <- mean((Y[unlist(folds)]-Ypred)^2)
+             
+           },
+           'logistic'={
+             #for logistic: CVM is the deviance;
+             #-2loglik(\hat{\eta}) + 2loglik(saturated model) = -2loglik(\hat{\eta})
+             lp <- unlist(sapply(1:length(folds),function(i){
+               #fit ridge====
+               fit <- .IWLSridge(Xbl[-folds[[i]],-folds[[i]]]/lam,Y=Y[-folds[[i]]], 
+                                 model=model,intercept=intrcpt, 
+                                 X1=Xunpen[-folds[[i]],]) #Fit. fit$etas contains the n linear predictors
+               #compute linear predictors====
+               lp <- .predictIWLS(IWLSfit=fit,X1new=Xunpen[folds[[i]],], 
+                                              Sigmanew = Xbl[folds[[i]],-folds[[i]]]/lam)
+                 
+               return(lp)
+             }))
+             
+             #translate linear predictors to predictions
+             Ypred <- 1/(1+exp(-lp))
+             
+             #compute CVM for this lambda====
+             extremes <- Ypred==0 || Ypred == 1
+             CVM <- -2 * sum(Y[unlist(folds)][!extremes]*log(Ypred[!extremes])+
+                               (1-Y[unlist(folds)][!extremes])*log(1-Ypred[!extremes]))
+             
+           },
+           'cox'={
+             #for cox: CVM is the minus partial likelihood;
+             lp <- unlist(sapply(folds,function(i){
+               #fit ridge====
+               fit <- .IWLSCoxridge(Xbl[-folds[[i]],-folds[[i]]]/lam,Y=Y[-folds[[i]],], 
+                                    X1=Xunpen[-folds[[i]],]) 
+               
+               #compute linear predictors====
+               lp <- .predictIWLS(IWLSfit=fit,X1new=Xunpen[folds[[i]],], 
+                                              Sigmanew = Xbl[folds[[i]],-folds[[i]]]/lam)
+               
+               return(lp)
+             }))
+             
+             #compute CVM for this lambda====
+             #for Cox survival: the CVM is minus log partial likelihood
+             CVM <- -sum(sapply(which(Y[unlist(folds),2]==1),function(i){
+               lp[i] - log(sum(exp(lp[Y[unlist(folds),1]>=Y[unlist(folds)[i],1]])))
+             }))
+             
+           }
+    )
+    return(CVM)
+  }
+  
+  
+  #find minimiser lambda
+  op <- optim(log(mean(lambdarange)),CVM,method="Brent",lower=log(minlam),upper=log(lambdarange[2]))
+  lambda.min <- exp(op$par[1])
+  CVM.min <- op$value
+  
+  return(list("CVM"=CVM.min,
+              "lambda.min"=lambda.min))
+  
 }
 
 #Estimate maximum marginal likelihood estimates for linear model----
@@ -3438,14 +3822,14 @@ cv.ecpc <- function(Y,X,type.measure=c("MSE", "AUC"),outerfolds=10,
 
 #Discretise continuous co-data hierarchically----
 #Output: list of groups of covariates of varying size
-splitMedian <- function(values,index,depth,minGroupSize=50,first=T,
+splitMedian <- function(values,index=NULL,depth=NULL,minGroupSize=50,first=T,
                         split=c("both","lower","higher")){
   #split: "both" or "lower" if both groups have to be split recursively or only lower, lower-valued group
   if(length(split)==3) split <- "both"
-  if(missing(depth)){
+  if(length(depth)==0){
     depth <- floor(log2(length(values)/minGroupSize)) #number of layers in hierarchical tree such that lowest level contains at least minSize group members (start from 2 groups)
   }
-  if(missing(index)&first){
+  if(length(index)==0&first){
     index <- 1:length(values)
   }
   if(split=="higher"){
