@@ -109,6 +109,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
   }
   switch(model,
          'linear'={
+           Y <- c(Y) #make numeric vector 
            fml <- 'gaussian'
            sd_y <- sqrt(var(Y)*(n-1)/n)[1]
            # if(standardise_Y){
@@ -118,6 +119,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
            # }
          },
          'logistic'={
+           Y <- c(Y)
            fml <- 'binomial'
            sd_y <- 1 #do not standardise y in logistic setting
            #sd_y_former <- sd_y
