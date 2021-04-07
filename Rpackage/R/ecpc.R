@@ -309,7 +309,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
     XXbl <- multiridge::createXXblocks(lapply(datablocks,function(ind) X[,intersect(ind,ind[!(ind%in%unpen)])]))
     
     #Find initial lambda: fast CV per data block, separately using SVD. CV is done using the penalized package
-    cvperblock <- multiridge::fastCV(Xbl,Y=Y,kfold=fold,fixedfolds = F,X1=X[,(1:p)%in%unpen],intercept=intrcpt)
+    cvperblock <- multiridge::fastCV2(Xbl,Y=Y,kfold=fold,fixedfolds = F,X1=X[,(1:p)%in%unpen],intercept=intrcpt)
     lambdas <- cvperblock$lambdas
     lambdas[lambdas==Inf] <- 10^6
     
