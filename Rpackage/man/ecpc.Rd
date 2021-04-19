@@ -220,6 +220,7 @@ hierarchy.grouplevel <- obtainHierarchy(groupset = groupsetHierarchical)
 ############ 
 # Fit ecpc #
 ############
+\dontrun{
 #fit ecpc for the two group sets, with ridge hypershrinkage for group set 1, 
 # and hierarchical lasso and ridge for group set 2.
 tic<-proc.time()[[3]]
@@ -238,6 +239,8 @@ summary(fit$betaPost) #estimated regression coefficients after posterior selecti
 
 c(fit$MSEecpc,fit$MSEridge) #mean squared error on test set for ecpc and ordinary ridge
 fit$MSEPost #MSE on the test set of ecpc after posterior selection
+}
+
 
 ###################################
 # Fit ecpc for multiple datatypes #
