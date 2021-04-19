@@ -11,7 +11,7 @@ Plot group weights from multiple cross-validation folds.
 }
 \usage{
 visualiseGroupweights(dfGrps, Groupset, groupset.grouplvl, values, 
-                      widthBoxplot = 0.05, boxplot = T, jitter = T, 
+                      widthBoxplot = 0.05, boxplot = TRUE, jitter = TRUE, 
                       ps = 1.5, ls = 1)
 }
 %- maybe also 'usage' for other objects documented here.

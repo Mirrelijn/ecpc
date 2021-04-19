@@ -12,7 +12,7 @@ Each group is then recursively split in two at the median co-data value, until s
 The discretised groups are used for adaptive discretisation of continuous co-data.
 }
 \usage{
-splitMedian(values, index=NULL, depth=NULL, minGroupSize = 50, first = T, 
+splitMedian(values, index=NULL, depth=NULL, minGroupSize = 50, first = TRUE, 
   split = c("both","lower","higher"))
 }
 %- maybe also 'usage' for other objects documented here.

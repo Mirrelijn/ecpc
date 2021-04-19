@@ -11,7 +11,7 @@ Produce folds for cross-validation.
 }
 \usage{
 produceFolds(nsam, outerfold, response, model = c("logistic","cox","other"), 
-balance = TRUE, fixedfolds = F)
+balance = TRUE, fixedfolds = FALSE)
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
@@ -39,4 +39,20 @@ Should folds be balanced in response?
 %%     ~~Describe \code{fixedfolds} here~~
 Should fixed folds be used?
 }
+}
+\value{
+A list with `outerfold' elements containing a vector of sample indices in each fold.
+}
+\examples{
+n<-100
+outerfold <- 10
+
+#linear model
+resp <- rnorm(n)
+folds <- produceFolds(nsam=n, outerfold=outerfold, response=resp)
+
+#logistic model: keep 0/1 balanced across folds
+resp <- as.factor(rnorm(n)>0.5)
+folds <- produceFolds(nsam=n, outerfold=outerfold, response=resp, balance = TRUE)
+
 }

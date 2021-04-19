@@ -10,8 +10,8 @@ Visualise estimated group set weights
 Plot group set weights from multiple cross-validation folds.
 }
 \usage{
-visualiseGroupsetweights(dfGrps, GroupsetNames, hist = F, boxplot = T, 
-                          jitter = T, ps = 1.5, width = 0.5)
+visualiseGroupsetweights(dfGrps, GroupsetNames, hist = FALSE, boxplot = TRUE, 
+                          jitter = TRUE, ps = 1.5, width = 0.5)
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
@@ -71,6 +71,6 @@ Plot in ggplot object.
 #                      Groupset.weight=c(rnorm(10,0,0.01),rnorm(10,1,0.05)),
 #                      Fold=rep(1:10,2))
 # GroupsetNames <- c("Groupset1","Groupset2")
-# visualiseGroupsetweights(dfGrps, GroupsetNames, hist = F, boxplot = T,jitter=T)
+# visualiseGroupsetweights(dfGrps, GroupsetNames, hist = FALSE, boxplot = TRUE,jitter=TRUE)
 }
 

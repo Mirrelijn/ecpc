@@ -17,7 +17,7 @@ ecpc(Y, X, groupsets, groupsets.grouplvl = NULL, hypershrinkage,
 unpen = NULL, intrcpt = TRUE, model=c("linear","logistic","cox"), 
 postselection = "elnet,dense", maxsel = 10, 
 lambda = NULL, fold = 10, sigmasq = NaN, w = NaN, 
-nsplits = 100, weights = TRUE, profplotRSS = F, Y2 = NaN, X2 = NaN, 
+nsplits = 100, weights = TRUE, profplotRSS = FALSE, Y2 = NaN, X2 = NaN, 
 compare = TRUE, mu = FALSE, normalise = FALSE, silent = FALSE,
 datablocks = NULL)%,standardise_Y=FALSE)
 }

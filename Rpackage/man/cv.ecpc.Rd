@@ -11,7 +11,7 @@ Cross-validates ecpc and returns model fit, summary statistics and cross-validat
 }
 \usage{
 cv.ecpc(Y,X,type.measure=c("MSE","AUC"),outerfolds=10,
-        lambdas=NULL,ncores=1,balance=T,silent=F,...)
+        lambdas=NULL,ncores=1,balance=TRUE,silent=FALSE,...)
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
@@ -136,17 +136,17 @@ hierarchy.grouplevel <- obtainHierarchy(groupset = groupsetHierarchical)
 ################
 # #Plot estimated group set weights across folds
 # visualiseGroupsetweights(dfGrps = cv.fit$dfGrps,
-#       GroupsetNames = c("random","hierarchical"),boxplot=F)
+#       GroupsetNames = c("random","hierarchical"),boxplot=FALSE)
 # 
 # #Plot estimated group weights across folds
 # #Group set 1:
 # visualiseGroupweights(dfGrps = cv.fit$dfGrps[cv.fit$dfGrps$Groupset==1,],
-#                       Groupset=groupsetRandom,boxplot = F)
+#                       Groupset=groupsetRandom,boxplot = FALSE)
 # 
 # #Group set 2; plot group weight versus continuous co-data value:
 # visualiseGroupweights(dfGrps = cv.fit$dfGrps[cv.fit$dfGrps$Groupset==2,],
 #                       Groupset=groupsetHierarchical,values=continuousCodata,
-#                       groupset.grouplvl = hierarchy.grouplevel,boxplot = F)
+#                       groupset.grouplvl = hierarchy.grouplevel,boxplot = FALSE)
 # #visualise which hierarchical groups are selected in a specific fold:
 # fold <- 1
 # visualiseGroupset(Groupset = groupsetHierarchical,

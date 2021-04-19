@@ -11,7 +11,7 @@ Simulate toy data with linear or logistic response.
 }
 \usage{
 simDat(n, p, n2 = 20, muGrp, varGrp, indT, sigma = 1, 
-  model = c("linear","logistic"), flag = F)
+  model = c("linear","logistic"), flag = FALSE)
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
@@ -80,8 +80,8 @@ A list with
 # indT <- rep(c(1,2),each=15) 
 #
 # dataLin <- simDat(n, p, n2 = 20, muGrp, varGrp, indT, sigma = 1, model = "linear", 
-#     flag = T)
+#     flag = TRUE)
 # dataLog <- simDat(n, p, n2 = 20, muGrp, varGrp, indT, model = "logistic", 
-#     flag = T)
+#     flag = TRUE)
 
 }

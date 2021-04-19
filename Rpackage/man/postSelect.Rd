@@ -94,3 +94,35 @@ A list with the following elements:
   \item{MSEPost}{If independent test set 'X2', 'Y2' is given, mean squared error of the posterior selection model predictions.}
 }
 
+\examples{
+#####################
+# Simulate toy data #
+#####################
+p<-300 #number of covariates
+n<-100 #sample size training data set
+n2<-100 #sample size test data set
+
+#simulate all betas i.i.d. from beta_k~N(mean=0,sd=sqrt(0.1)):
+muBeta<-0 #prior mean
+varBeta<-0.1 #prior variance
+indT1<-rep(1,p) #vector with group numbers all 1 (all simulated from same normal distribution)
+
+#simulate test and training data sets:
+Dat<-simDat(n,p,n2,muBeta,varBeta,indT1,sigma=1,model='linear') 
+str(Dat) #Dat contains centered observed data, response data and regression coefficients
+
+####################################### 
+# Fit ecpc and perform post-selection #
+#######################################
+fit <- ecpc(Y=Dat$Y,X=Dat$Xctd,groupsets=list(list(1:p)),
+            groupsets.grouplvl=list(NULL),
+            hypershrinkage=c("none"),
+            model="linear",maxsel=c(5,10,15,20),
+            Y2=Dat$Y2,X2=Dat$X2ctd)
+
+fitPost <- postSelect(Y=Dat$Y,X=Dat$Xctd, beta=fit$beta, intrcpt = fit$intercept,
+                      maxsel = c(5,10,15,20), penalties=fit$penalties, 
+                      tauglobal=fit$tauglobal, sigmahat = fit$sigmahat)
+summary(fit$betaPost[,1]); summary(fitPost$betaPost[,1])
+
+}
