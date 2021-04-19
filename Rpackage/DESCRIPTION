@@ -5,7 +5,7 @@ Version: 2.0
 Date: 2021-04-19
 Authors@R: c(person(c("Mirrelijn","M."), "van Nee", role = c("aut", "cre"),
                      email = "m.vannee@amsterdamumc.nl"),
-              person(c("Lodewyk","F.","A."), "Wessels", role = "aut"),
+              person(c("Lodewyk","F.A."), "Wessels", role = "aut"),
               person(c("Mark","A."), "van de Wiel", role = "aut"))
 Author: Mirrelijn M. van Nee [aut,cre], 
   Lodewyk F.A. Wessels [aut], 
