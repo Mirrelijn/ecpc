@@ -13,7 +13,7 @@ Group hyperparameters are estimated with an empirical Bayes method of moments, p
 Various types of hypershrinkage may be used for various co-data, including overlapping groups, hierarchical groups and continuous co-data.
 }
 \usage{
-ecpc(Y, X, groupsets, groupsets.grouplvl = NULL, hypershrinkage, 
+ecpc(Y, X, Zt, groupsets=NULL, groupsets.grouplvl = NULL, hypershrinkage, 
 unpen = NULL, intrcpt = TRUE, model=c("linear","logistic","cox"), 
 postselection = "elnet,dense", maxsel = 10, 
 lambda = NULL, fold = 10, sigmasq = NaN, w = NaN, 
@@ -30,6 +30,10 @@ Response data; n-dimensional vector (n: number of samples) for linear and logist
   \item{X}{
 %%     ~~Describe \code{X} here~~
 Observed data; (nxp)-dimensional matrix (p: number of covariates) with each row the observed high-dimensional feature vector of a sample.
+}
+  \item{Zt}{
+%%     ~~Describe \code{X} here~~
+Transposed co-data matrix with continous co-data; (Gxp)-dimensional matrix (G: number of continuous co-data features) with each row the observed high-dimensional feature vector of a feature.
 }
   \item{groupsets}{
 %%     ~~Describe \code{groupsets} here~~
