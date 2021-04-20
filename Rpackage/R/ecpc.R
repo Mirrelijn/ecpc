@@ -4,7 +4,7 @@
 #to be able to handle various co-data, including overlapping groups, hierarchical groups and continuous co-data.
 
 
-ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
+ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinkage,
                  unpen=NULL,intrcpt=TRUE,model=c("linear", "logistic", "cox"),
                  postselection="elnet,dense",maxsel=10,
                  lambda=NULL,fold=10,sigmasq=NaN,w=NaN,
@@ -19,6 +19,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
   #Data and co-data:
   # Y: nx1 vector with response data
   # X: nxp matrix with observed data
+  # Zt: Gxp matrix with co-data on the p covariates 
   # groupsets: list of m elements, each element one co-data group set
   #            with each group set a list of groups containing the indices of covariates in that group 
   # groupsets.grouplvl: (optional) hierarchical groups define a group set on group level.
@@ -66,6 +67,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
   #-2. Set-up variables ---------------------------------------------------------------------------
   n <- dim(X)[1] #number of samples
   p <- dim(X)[2] #number of covariates 
+  cont_codata <- FALSE
   if(!missing(X2)) n2<-dim(X2)[1] #number of samples in independent data set x2 if given
   multi <- FALSE; if(!is.null(datablocks)) multi <- TRUE #use multiple global tau, one for each data block
    
@@ -159,55 +161,75 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
   }
   
   #-2.1 Variables describing groups and partition(s) =================================================
-  G <- sapply(groupsets,length) #1xm vector with G_i, number of groups in partition i
-  m <- length(G) #number of partitions
-  if(missing(hypershrinkage)){
-    hypershrinkage<-rep("ridge",m)
-  }
-  if(any(grepl("hierLasso",hypershrinkage))){
-    if(length(groupsets.grouplvl)==0){
-      stop("Group set on group level for hierarchical groups is missing")
+  if(length(groupsets)>0 & length(Zt)==0){
+    G <- sapply(groupsets,length) #1xm vector with G_i, number of groups in partition i
+    m <- length(G) #number of partitions
+    if(missing(hypershrinkage)){
+      hypershrinkage<-rep("ridge",m)
     }
-    if(!is.list(groupsets.grouplvl) | length(groupsets.grouplvl)!=m){
-      stop("Group sets on group level should be a nested list")
-    }
-  }
-  indGrpsGlobal <- list(1:G[1]) #global group index in case we have multiple partitions
-  if(m>1){
-    for(i in 2:m){
-      indGrpsGlobal[[i]] <- (sum(G[1:(i-1)])+1):sum(G[1:i])
-    }
-  }
-  Kg <- lapply(groupsets,function(x)(sapply(x,length))) #m-list with G_i vector of group sizes in partition i
-  #ind1<-ind
-  
-  #ind <- (matrix(1,G,1)%*%ind)==(1:G)#sparse matrix with ij element TRUE if jth element in group i, otherwise FALSE
-  i<-unlist(sapply(1:sum(G),function(x){rep(x,unlist(Kg)[x])}))
-  j<-unlist(unlist(groupsets))
-  ind <- Matrix::sparseMatrix(i,j,x=1) #sparse matrix with ij element 1 if jth element in group i (global index), otherwise 0
-  
-  Ik <- lapply(1:m,function(i){
-    x<-rep(0,sum(G))
-    x[(sum(G[1:i-1])+1):sum(G[1:i])]<-1
-    as.vector(x%*%ind)}) #list for each partition with px1 vector with number of groups beta_k is in
-  #sparse matrix with ij element 1/Ij if beta_j in group i
-  
-  #make co-data matrix Z (Zt transpose of Z as in paper, with co-data matrices stacked for multiple groupsets)
-  Zt<-ind; 
-  if(G[1]>1){
-    Zt[1:G[1],]<-Matrix::t(Matrix::t(ind[1:G[1],])/apply(ind[1:G[1],],2,sum))
-  }
-  if(m>1){
-    for(i in 2:m){
-      if(G[i]>1){
-        Zt[indGrpsGlobal[[i]],]<-Matrix::t(Matrix::t(ind[indGrpsGlobal[[i]],])/
-                                                     apply(ind[indGrpsGlobal[[i]],],2,sum))
+    if(any(grepl("hierLasso",hypershrinkage))){
+      if(length(groupsets.grouplvl)==0){
+        stop("Group set on group level for hierarchical groups is missing")
+      }
+      if(!is.list(groupsets.grouplvl) | length(groupsets.grouplvl)!=m){
+        stop("Group sets on group level should be a nested list")
       }
     }
-  }
-
-  if(dim(Zt)[2]<p) Zt <- cbind(Zt,matrix(rep(NaN,(p-dim(Zt)[2])*sum(G)),c(sum(G),p-dim(Zt)[2])))
-  PenGrps <- as.matrix(Zt[,!((1:p)%in%unpen)]%*%Matrix::t(Zt[,!((1:p)%in%unpen)])) #penalty matrix groups
+    indGrpsGlobal <- list(1:G[1]) #global group index in case we have multiple partitions
+    if(m>1){
+      for(i in 2:m){
+        indGrpsGlobal[[i]] <- (sum(G[1:(i-1)])+1):sum(G[1:i])
+      }
+    }
+    Kg <- lapply(groupsets,function(x)(sapply(x,length))) #m-list with G_i vector of group sizes in partition i
+    #ind1<-ind
+    
+    #ind <- (matrix(1,G,1)%*%ind)==(1:G)#sparse matrix with ij element TRUE if jth element in group i, otherwise FALSE
+    i<-unlist(sapply(1:sum(G),function(x){rep(x,unlist(Kg)[x])}))
+    j<-unlist(unlist(groupsets))
+    ind <- Matrix::sparseMatrix(i,j,x=1) #sparse matrix with ij element 1 if jth element in group i (global index), otherwise 0
+    
+    Ik <- lapply(1:m,function(i){
+      x<-rep(0,sum(G))
+      x[(sum(G[1:i-1])+1):sum(G[1:i])]<-1
+      as.vector(x%*%ind)}) #list for each partition with px1 vector with number of groups beta_k is in
+    #sparse matrix with ij element 1/Ij if beta_j in group i
+    
+    #make co-data matrix Z (Zt transpose of Z as in paper, with co-data matrices stacked for multiple groupsets)
+    Zt<-ind; 
+    if(G[1]>1){
+      Zt[1:G[1],]<-Matrix::t(Matrix::t(ind[1:G[1],])/apply(ind[1:G[1],],2,sum))
+    }
+    if(m>1){
+      for(i in 2:m){
+        if(G[i]>1){
+          Zt[indGrpsGlobal[[i]],]<-Matrix::t(Matrix::t(ind[indGrpsGlobal[[i]],])/
+                                               apply(ind[indGrpsGlobal[[i]],],2,sum))
+        }
+      }
+    }
+    
+    if(dim(Zt)[2]<p) Zt <- cbind(Zt,matrix(rep(NaN,(p-dim(Zt)[2])*sum(G)),c(sum(G),p-dim(Zt)[2])))
+    PenGrps <- as.matrix(Zt[,!((1:p)%in%unpen)]%*%Matrix::t(Zt[,!((1:p)%in%unpen)])) #penalty matrix groups
+  }else{
+    cont_codata <- TRUE
+    if(is.vector(Zt)) Zt <- matrix(Zt,1,length(Zt))
+    if(length(Zt)==0) stop("Provide co-data in groupsets or Zt")
+    if(length(groupsets)>0) print("Continuous co-data provided, any groupsets are ignored")
+    
+    G <- dim(Zt)[1]
+    m <- 1
+    if(missing(hypershrinkage)) hypershrinkage <- "none"
+    normalise <- FALSE
+    print(paste("Continuous co-data provided. Hypershrinkage is set to",hypershrinkage))
+    indGrpsGlobal <- list(1:G)
+    Kg <- list(apply(Zt,1,function(x)(sum(!is.na(x))))) #m-list with G_i vector of group sizes in partition i
+    
+    Ik <- list(rep(1,p))
+    if(dim(Zt)[2]!=p) stop("number of columns of Zt and X should match")
+    PenGrps <- as.matrix(Zt[,!((1:p)%in%unpen)]%*%Matrix::t(Zt[,!((1:p)%in%unpen)])) #penalty matrix groups
+  } 
+  
 
   #-2.2 Weight variables for extra shrinkage on group parameters =====================================
   # Compute weights and corresponding weight matrix
@@ -922,7 +944,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
           if(!silent) print(paste("Group set ",Partitions,": estimate hyperlambda for ",hypershrinkage," hypershrinkage",sep=""))
         }
       }
-      if(length(G)==1 && G==1){
+      if(length(G)==1 && G==1 && !cont_codata){
         lambdashat <- c(0,0)
         muhat <- mutrgt
         weightsMu <- NaN
@@ -2015,53 +2037,93 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
         if(!is.nan(tausq)){
           gamma <- rep(1,length(gamma))
         }else{
-          Btau <- unlist(
-            lapply(Partitions,function(i){ #for each partition
-              sapply(1:length(Kg[[i]]),function(j){ #for each group
-                #compute row with gamma_{xy}
-                x<-groupsets[[i]][[j]]
-                x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
-                sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
-                #sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1)/Kg[[i]][j]
+          if(!cont_codata){
+            Btau <- unlist(
+              lapply(Partitions,function(i){ #for each partition
+                sapply(1:length(Kg[[i]]),function(j){ #for each group
+                  #compute row with gamma_{xy}
+                  x<-groupsets[[i]][[j]]
+                  x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
+                  sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
+                  #sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1)/Kg[[i]][j]
+                })
               })
-            })
-          )
-          A <- matrix(unlist(
-            lapply(Partitions,function(i){ #for each partition
-              sapply(1:length(Kg[[i]]),function(j){ #for each group
-                #compute row with gamma_{xy}
-                x<-groupsets[[i]][[j]]
-                x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
-                #compute row with gamma_{xy}
-                unlist(sapply(Partitions,function(prt){sapply(groupsets[[prt]],function(y){
-                  y<-setdiff(y,zeroV)
-                  sum(t(c(1/V[x])*L[x,])%*%L[x,]*(R[,y]%*%(t(R[,y])/c(Ik[[prt]][y])*c(tauglobal[datablockNo[y]]))),na.rm=TRUE)/Kg[[i]][j]
-                })}))
-              }, simplify="array")
-            })
-          ),c(sum(G),sum(G)),byrow=TRUE) #reshape to matrix of size sum(G)xsum(G)
+            )
+            A <- matrix(unlist(
+              lapply(Partitions,function(i){ #for each partition
+                sapply(1:length(Kg[[i]]),function(j){ #for each group
+                  #compute row with gamma_{xy}
+                  x<-groupsets[[i]][[j]]
+                  x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
+                  #compute row with gamma_{xy}
+                  unlist(sapply(Partitions,function(prt){sapply(groupsets[[prt]],function(y){
+                    y<-setdiff(y,zeroV)
+                    sum(t(c(1/V[x])*L[x,])%*%L[x,]*(R[,y]%*%(t(R[,y])/c(Ik[[prt]][y])*c(tauglobal[datablockNo[y]]))),na.rm=TRUE)/Kg[[i]][j]
+                  })}))
+                }, simplify="array")
+              })
+            ),c(sum(G),sum(G)),byrow=TRUE) #reshape to matrix of size sum(G)xsum(G)
+          }else{
+            x<-pen
+            x<-setdiff(x,zeroV)
+            Btau <- unlist(
+              lapply(Partitions,function(i){ #for each partition
+                  pmax(0,((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1))
+                  #((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1)
+              })
+            )
+            A <- matrix(unlist(
+              lapply(Partitions,function(i){ #for each partition
+                  ((L[x,]%*%R[,x])^2/c(V[x]))%*%t(Zt[,x,drop=FALSE])*c(tauglobal[datablockNo[x]])
+            })),c(length(x),sum(G)),byrow=TRUE) #reshape to matrix of size sum(G)xsum(G)
+          }
           
           if(any(is.nan(fixWeightsTau))){
-            if(grepl("positive",hypershrinkage)){
-              penMSE <- function(gamma,b,A,lam) return(sum((b-A%*%gamma)^2)) 
-              #Aacc <- A%*%Wminhalf
-              
-              gamma <- rep(0,G)
-              fitTau <- Rsolnp::solnp(par = rep(1,length(indnot0)), fun=penMSE, b=Btau[indnot0],
-                              A=A[indnot0,indnot0],
-                              LB = rep(0,length(indnot0)),control=list(trace=0))
-              gamma[indnot0] <- as.vector(fitTau$pars)
-              gammatilde <- gamma
+            if(!cont_codata){
+              if(grepl("positive",hypershrinkage)){
+                penMSE <- function(gamma,b,A,lam) return(sum((b-A%*%gamma)^2)) 
+                #Aacc <- A%*%Wminhalf
+                
+                gamma <- rep(0,G)
+                fitTau <- Rsolnp::solnp(par = rep(1,length(indnot0)), fun=penMSE, b=Btau[indnot0],
+                                        A=A[indnot0,indnot0],
+                                        LB = rep(0,length(indnot0)),control=list(trace=0))
+                gamma[indnot0] <- as.vector(fitTau$pars)
+                gammatilde <- gamma
+              }else{
+                gamma <- rep(0,G)
+                gammatilde <- solve(t(A[indnot0,indnot0])%*%A[indnot0,indnot0],
+                                    t(A[indnot0,indnot0])%*%Btau[indnot0])
+                gamma <- pmax(0,gammatilde)
+                if(normalise){
+                  Cnorm <- p/sum(c(gamma)%*%Zt)
+                  gamma<-gamma*Cnorm
+                }
+              }
             }else{
-              gamma <- rep(0,G)
-              gammatilde <- solve(t(A[indnot0,indnot0])%*%A[indnot0,indnot0],
-                                 t(A[indnot0,indnot0])%*%Btau[indnot0])
-              gamma <- pmax(0,gammatilde)
-              if(normalise){
-                Cnorm <- p/sum(c(gamma)%*%Zt)
-                gamma<-gamma*Cnorm
+              if(grepl("positive",hypershrinkage)){
+                penMSE <- function(gamma,b,A,lam) return(sum((b-A%*%gamma)^2)) 
+                #Aacc <- A%*%Wminhalf
+                
+                gamma <- rep(0,G)
+                fitTau <- Rsolnp::solnp(par = rep(1,length(indnot0)), fun=penMSE, b=Btau,
+                                        A=A[,indnot0,drop=FALSE],
+                                        LB = rep(0,length(indnot0)),control=list(trace=0))
+                gamma[indnot0] <- as.vector(fitTau$pars)
+                gammatilde <- gamma
+              }else{
+                gamma <- rep(0,G)
+                gammatilde <- solve(t(A[,indnot0,drop=FALSE])%*%A[,indnot0,drop=FALSE],
+                                    t(A[,indnot0,drop=FALSE])%*%Btau)
+                gamma <- gammatilde
+                #gamma <- pmax(0,gammatilde)
+                # if(normalise){
+                #   Cnorm <- p/sum(c(gamma)%*%Zt)
+                #   gamma<-gamma*Cnorm
+                # }
               }
             }
+            
             if(any(is.nan(gamma))){warning("NaN in group variance")}
           }else{ #compute partition weights/co-data weights
             if(!silent) print("Estimate group set weights")
@@ -2263,8 +2325,14 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
       if(all(partWeightsTauG==0)){#set all partition/group weights to 1 (i.e. no difference in partitions/groups)
         lambdap<-sigmahat/(tauglobal[datablockNo]*as.vector(c(gamma[,1])%*%Zt)) #target tau/overall
         }else{
-          lambdap<-sigmahat/(tauglobal[datablockNo]*as.vector(c(partWeightsTauG[,Itr+1]*gamma[,Itr+1])%*%Zt)) #specific penalty for beta_k
-          lambdap[lambdap<0]<-Inf 
+          if(!cont_codata){
+            lambdap<-sigmahat/(tauglobal[datablockNo]*as.vector(c(partWeightsTauG[,Itr+1]*gamma[,Itr+1])%*%Zt)) #specific penalty for beta_k
+            lambdap[lambdap<0]<-Inf 
+          }else{
+            lambdap<-sigmahat/(tauglobal[datablockNo]*as.vector(c(partWeightsTauG[,Itr+1]*gammatilde[,Itr+1])%*%Zt)) #specific penalty for beta_k
+            lambdap[lambdap<0]<-Inf 
+          }
+          
         } 
       lambdap[(1:p)%in%unpen] <- 0
     }else{
