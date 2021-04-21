@@ -850,7 +850,8 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
       mukhat1<- muinitp[pen] + L[pen,]%*%(R[,pen]%*%(mutrgt-muinitp[pen]))
 
       #update tau overall
-      Btau1 <- sum(pmax((betasinit[pen]^2-mukhat1[pen]^2)/V[pen]-1,0),na.rm=TRUE) / length(pen)
+      #Btau1 <- sum(pmax((betasinit[pen]^2-mukhat1[pen]^2)/V[pen]-1,0),na.rm=TRUE) / length(pen)
+      Btau1 <- sum((betasinit[pen]^2-mukhat1[pen]^2)/V[pen]-1,na.rm=TRUE) / length(pen)
       pen2 <- setdiff(pen,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
       A1<-sum((t(L[pen2,]/c(V[pen2]))%*%L[pen2,])*(R[,pen2]%*%t(R[,pen2])),na.rm=TRUE)/length(pen)
       tauglobal<-Btau1/A1
@@ -1292,9 +1293,10 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
                   #compute row with gamma_{xy}
                   x<-groupsets[[i]][[j]]
                   x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
-                  sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%
-                        (muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
-                  #sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1)/Kg[[i]][j]
+                  #sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%
+                  #      (muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
+                  sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%
+                         (muhatp[pen]-muinitp[pen])))^2)/V[x]-1,na.rm=TRUE)/Kg[[i]][j]
                 })
               })
             )
@@ -1335,8 +1337,8 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
                     #compute row with gamma_{xy}
                     x<-INDin[[i]][[split]][[j]]
                     x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
-                    sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
-                    #sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1))/Kg[[i]][j]
+                    #sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
+                    sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1,na.rm=TRUE)/Kg[[i]][j]
                   })
                 })
               )/constA
@@ -1388,9 +1390,8 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
                   #compute row with gamma_{xy}
                   x<-INDout[[i]][[split]][[j]]
                   x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
-                  sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
-                  #sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1)/Kg[[i]][j]
-                  #sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)-V[x]))/Kg[[i]][j]
+                  #sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
+                  sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1,na.rm=TRUE)/Kg[[i]][j]
                 })
               })
             )/constA*2
@@ -2044,8 +2045,8 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
                   #compute row with gamma_{xy}
                   x<-groupsets[[i]][[j]]
                   x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
-                  sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
-                  #sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1)/Kg[[i]][j]
+                  #sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
+                  sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1,na.rm=TRUE)/Kg[[i]][j]
                 })
               })
             )
@@ -2066,18 +2067,10 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
           }else{
             x<-pen
             x<-setdiff(x,zeroV)
-            Btau <- unlist(
-              lapply(Partitions,function(i){ #for each partition
-                  #pmax(0,((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1))
-                  ((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1)
-              })
-            )
-            A <- matrix(unlist(
-              lapply(Partitions,function(i){ #for each partition
-                  ((L[x,]%*%R[,x])^2/c(V[x]))%*%t(Zt[,x,drop=FALSE])*c(tauglobal[datablockNo[x]])
-            })),c(length(x),sum(G)),byrow=TRUE) #reshape to matrix of size sum(G)xsum(G)
+            Btau <- ((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1)
+            #Btau <- pmax(0,((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1))
+            A <- as.matrix(((L[x,]%*%R[,x])^2/c(V[x]))%*%t(Zt[,x,drop=FALSE])*c(tauglobal[datablockNo[x]]))
           }
-          
           if(any(is.nan(fixWeightsTau))){
             if(!cont_codata){
               if(grepl("positive",hypershrinkage)){
@@ -2095,6 +2088,7 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
                 gammatilde <- solve(t(A[indnot0,indnot0])%*%A[indnot0,indnot0],
                                     t(A[indnot0,indnot0])%*%Btau[indnot0])
                 gamma <- pmax(0,gammatilde)
+                
                 if(normalise){
                   Cnorm <- p/sum(c(gamma)%*%Zt)
                   gamma<-gamma*Cnorm
