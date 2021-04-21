@@ -880,7 +880,7 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
                         penalty.factor=penfctr)
       }else{
         glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
-                            lambda = lambda/n/2*sd_y,family=fml,
+                            lambda = lambda/n*sd_y,family=fml,
                             offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], intercept = intrcpt, standardize = FALSE,
                             penalty.factor=penfctr)
       }
@@ -2068,8 +2068,8 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
             x<-setdiff(x,zeroV)
             Btau <- unlist(
               lapply(Partitions,function(i){ #for each partition
-                  pmax(0,((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1))
-                  #((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1)
+                  #pmax(0,((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1))
+                  ((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1)
               })
             )
             A <- matrix(unlist(
@@ -2329,6 +2329,7 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
             lambdap<-sigmahat/(tauglobal[datablockNo]*as.vector(c(partWeightsTauG[,Itr+1]*gamma[,Itr+1])%*%Zt)) #specific penalty for beta_k
             lambdap[lambdap<0]<-Inf 
           }else{
+            taup<-tauglobal[datablockNo]*as.vector(c(partWeightsTauG[,Itr+1]*gammatilde[,Itr+1])%*%Zt)
             lambdap<-sigmahat/(tauglobal[datablockNo]*as.vector(c(partWeightsTauG[,Itr+1]*gammatilde[,Itr+1])%*%Zt)) #specific penalty for beta_k
             lambdap[lambdap<0]<-Inf 
           }
