@@ -1294,7 +1294,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
               })
             ),c(sum(G),sum(G)),byrow=TRUE) #reshape to matrix of size sum(G)xsum(G)
             
-            constA <- mean(diag(A),na.rm=TRUE)
+            constA <- 1#mean(diag(A),na.rm=TRUE)
             Btau <- Btau/constA
             A <- A/constA
             
@@ -1355,7 +1355,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
                     })}))
                   }, simplify="array")
                 })
-              ),c(sum(G),sum(G)),byrow=TRUE)/constA*2 #reshape to matrix of size sum(G)xsum(G)
+              ),c(sum(G),sum(G)),byrow=TRUE)/constA #reshape to matrix of size sum(G)xsum(G)
             })
             #weight matrix
             AinAcc <- lapply(1:nsplits,function(i){
@@ -1380,7 +1380,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
             #   Btau - Btauin[[split]]
             # })
             Aout <- lapply(1:nsplits,function(split){
-              2*A - Ain[[split]]
+              A - Ain[[split]]
             })
             
             #-3.3.3|1.2.3 Define function RSSlambdatau, #################################################
@@ -1857,7 +1857,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
             #browser()
             
             if(profplotRSS){ #profile plot lambda vs RSS
-              lambdas <- 10^seq(-5,6,length.out=30)
+              lambdas <- 10^seq(min(-5,log10(rangelambda2[1])),6,length.out=30)
               FRSS <- sapply(log(lambdas),RSSlambdatau)
               profPlot <- plot(log10(lambdas),FRSS,xlab="hyperlambda (log10-scale)",ylab="RSS",
                                main=paste("Group set ",Partitions,", ",hypershrinkage," hypershrinkage",sep=""))
@@ -2087,7 +2087,6 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
               
               #Three options to solve for partition weights (use only one):
               #Solve for tau and truncate negative values to 0
-              #browser()
               cosangle<-t(as.matrix(t(Zt)%*%weightMatrixTau))%*%as.matrix(t(Zt)%*%weightMatrixTau)
               cosangle<-abs(t(cosangle/sqrt(diag(cosangle)))/sqrt(diag(cosangle)))
               cosangle <- cosangle-diag(rep(1,m))
@@ -2109,7 +2108,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
                 objective <- CVXR::Minimize(sum((Atilde%*%w-c(Btau[indnot0]))^2))
                 constraint1 <- diag(rep(1,D))%*%w >= 0
                 problem <- CVXR::Problem(objective,constraints = list(constraint1))
-                result <- solve(problem)
+                result <- CVXR::solve(problem)
                 gamma <- c(result$getValue(w))
                 gammatilde <- gamma
                 gamma <- pmax(0,gammatilde) #correct round-off errors: partition/co-data weights
@@ -2121,6 +2120,10 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
                     indmatch <- setdiff(indmatch,indremove)[1] #take first in case multiple matches
                     return(indmatch)
                   })
+                  countdouble <- c(which(cosangle>0.999,arr.ind=TRUE))
+                  countdouble <- sapply(1:length(G),function(g)sum(countdouble==g))
+                  countdouble[countdouble==0] <- 1
+                  
                   temp<-try(solve(t(Atilde[,-indremove])%*%Atilde[,-indremove],
                                   t(Atilde[,-indremove])%*%c(Btau[indnot0])),silent=TRUE)
                   if(class(temp)[1]=="try-error"){
@@ -2134,12 +2137,14 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
                     gamma <- rep(0,length(G))
                     gamma[-indremove] <- c(result$getValue(w))
                     gamma[indremove] <- gamma[indmatch]
+                    gamma <- gamma/countdouble
                     gammatilde <- gamma
                     gamma <- pmax(0,gammatilde) #correct round-off
                   }else{
                     gammatilde<-rep(0,m)
                     gammatilde[-indremove] <- temp
-                    gamma[indremove] <- gamma[indmatch]
+                    gammatilde[indremove] <- gammatilde[indmatch]
+                    gammatilde <- gammatilde/countdouble
                     gamma <- pmax(0,gammatilde)
                   }
                 }
