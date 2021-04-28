@@ -12,7 +12,7 @@ Author: Mirrelijn M. van Nee [aut, cre],
   Mark A. van de Wiel [aut]
 Maintainer: Mirrelijn M. van Nee <m.vannee@amsterdamumc.nl>
 Depends: R (>= 3.1.0)
-Imports: glmnet, stats, Matrix, gglasso, mvtnorm, CVXR, multiridge
+Imports: glmnet, stats, Matrix, gglasso, mvtnorm, CVXR, multiridge, nnls
 Suggests: MASS, Rsolnp, foreach, doParallel, survival,
   parallel, ggplot2, ggraph, igraph, scales, dplyr, magrittr, pROC, mgcv, expm
 Description: Fit linear, logistic and Cox survival regression models penalised with adaptive multi-group ridge penalties.

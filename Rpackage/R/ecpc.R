@@ -219,7 +219,7 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
     
     G <- dim(Zt)[1]
     m <- 1
-    if(missing(hypershrinkage)) hypershrinkage <- "none"
+    if(missing(hypershrinkage)) hypershrinkage <- "none+positive"
     normalise <- FALSE
     print(paste("Continuous co-data provided. Hypershrinkage is set to",hypershrinkage))
     indGrpsGlobal <- list(1:G)
@@ -2074,14 +2074,18 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
           if(any(is.nan(fixWeightsTau))){
             if(!cont_codata){
               if(grepl("positive",hypershrinkage)){
-                penMSE <- function(gamma,b,A,lam) return(sum((b-A%*%gamma)^2)) 
-                #Aacc <- A%*%Wminhalf
+                # penMSE <- function(gamma,b,A,lam) return(sum((b-A%*%gamma)^2)) 
+                # #Aacc <- A%*%Wminhalf
+                # gamma <- rep(0,G)
+                # fitTau <- Rsolnp::solnp(par = rep(1,length(indnot0)), fun=penMSE, b=Btau[indnot0],
+                #                         A=A[indnot0,indnot0],
+                #                         LB = rep(0,length(indnot0)),control=list(trace=0))
+                # gamma[indnot0] <- as.vector(fitTau$pars)
+                # gammatilde <- gamma
                 
                 gamma <- rep(0,G)
-                fitTau <- Rsolnp::solnp(par = rep(1,length(indnot0)), fun=penMSE, b=Btau[indnot0],
-                                        A=A[indnot0,indnot0],
-                                        LB = rep(0,length(indnot0)),control=list(trace=0))
-                gamma[indnot0] <- as.vector(fitTau$pars)
+                fitTau <- nnls::nnls(A[indnot0,indnot0],Btau[indnot0])
+                gamma[indnot0] <- as.vector(fitTau$x)
                 gammatilde <- gamma
               }else{
                 gamma <- rep(0,G)
@@ -2096,14 +2100,19 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
               }
             }else{
               if(grepl("positive",hypershrinkage)){
-                penMSE <- function(gamma,b,A,lam) return(sum((b-A%*%gamma)^2)) 
-                #Aacc <- A%*%Wminhalf
+                # penMSE <- function(gamma,b,A,lam) return(sum((b-A%*%gamma)^2))
+                # #Aacc <- A%*%Wminhalf
+                # 
+                # gamma <- rep(0,G)
+                # fitTau <- Rsolnp::solnp(par = rep(1,length(indnot0)), fun=penMSE, b=Btau,
+                #                         A=A[,indnot0,drop=FALSE],
+                #                         LB = rep(0,length(indnot0)),control=list(trace=0))
+                # gamma[indnot0] <- as.vector(fitTau$pars)
+                # gammatilde <- gamma
                 
                 gamma <- rep(0,G)
-                fitTau <- Rsolnp::solnp(par = rep(1,length(indnot0)), fun=penMSE, b=Btau,
-                                        A=A[,indnot0,drop=FALSE],
-                                        LB = rep(0,length(indnot0)),control=list(trace=0))
-                gamma[indnot0] <- as.vector(fitTau$pars)
+                fitTau <- nnls::nnls(A[,indnot0,drop=FALSE],Btau)
+                gamma[indnot0] <- as.vector(fitTau$x)
                 gammatilde <- gamma
               }else{
                 gamma <- rep(0,G)
