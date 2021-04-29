@@ -325,13 +325,13 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
     #Find joint lambdas:
     leftout <- multiridge::CVfolds(Y=Y,kfold=fold,nrepeat=3,fixedfolds = FALSE) #Create (repeated) CV-splits of the data
     if(sum((1:p)%in%unpen)>0){
-      jointlambdas <- multiridge::optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
+      capture.output({jointlambdas <- multiridge::optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
                                      X1=X[,(1:p)%in%unpen],intercept=intrcpt,
-                                     score=ifelse(model == "linear", "mse", "loglik"),model=model)
+                                     score=ifelse(model == "linear", "mse", "loglik"),model=model)})
     }else{
-      jointlambdas <- multiridge::optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
+      capture.output({jointlambdas <- multiridge::optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
                                      intercept=intrcpt,
-                                     score=ifelse(model == "linear", "mse", "loglik"),model=model)
+                                     score=ifelse(model == "linear", "mse", "loglik"),model=model)})
     }
     
     lambda <- jointlambdas$optpen
@@ -828,8 +828,8 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
       mukhat1<- muinitp[pen] + L[pen,]%*%(R[,pen]%*%(mutrgt-muinitp[pen]))
 
       #update tau overall
-      #Btau1 <- sum(pmax((betasinit[pen]^2-mukhat1[pen]^2)/V[pen]-1,0),na.rm=TRUE) / length(pen)
-      Btau1 <- sum((betasinit[pen]^2-mukhat1[pen]^2)/V[pen]-1,na.rm=TRUE) / length(pen)
+      Btau1 <- sum(pmax((betasinit[pen]^2-mukhat1[pen]^2)/V[pen]-1,0),na.rm=TRUE) / length(pen)
+      #Btau1 <- sum((betasinit[pen]^2-mukhat1[pen]^2)/V[pen]-1,na.rm=TRUE) / length(pen)
       pen2 <- setdiff(pen,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
       A1<-sum((t(L[pen2,]/c(V[pen2]))%*%L[pen2,])*(R[,pen2]%*%t(R[,pen2])),na.rm=TRUE)/length(pen)
       tauglobal<-Btau1/A1
@@ -1271,10 +1271,10 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
                   #compute row with gamma_{xy}
                   x<-groupsets[[i]][[j]]
                   x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
-                  #sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%
-                  #      (muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
-                  sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%
-                             (muhatp[pen]-muinitp[pen])))^2)/V[x]-1,na.rm=TRUE)/Kg[[i]][j]
+                  sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%
+                        (muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
+                  #sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%
+                  #           (muhatp[pen]-muinitp[pen])))^2)/V[x]-1,na.rm=TRUE)/Kg[[i]][j]
                 })
               })
             )
@@ -1315,9 +1315,9 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
                     #compute row with gamma_{xy}
                     x<-INDin[[i]][[split]][[j]]
                     x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
-                    #sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
-                    sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%
-                                (muhatp[pen]-muinitp[pen])))^2)/V[x]-1,na.rm=TRUE)/Kg[[i]][j]
+                    sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
+                    #sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%
+                    #            (muhatp[pen]-muinitp[pen])))^2)/V[x]-1,na.rm=TRUE)/Kg[[i]][j]
                   })
                 })
               )/constA
@@ -1369,12 +1369,12 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
                   #compute row with gamma_{xy}
                   x<-INDout[[i]][[split]][[j]]
                   x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
-                  #sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
-                  sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%
-                      (muhatp[pen]-muinitp[pen])))^2)/V[x]-1,na.rm=TRUE)/Kg[[i]][j]
+                  sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
+                  #sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%
+                  #    (muhatp[pen]-muinitp[pen])))^2)/V[x]-1,na.rm=TRUE)/Kg[[i]][j]
                 })
               })
-            )/constA*2
+            )/constA
             })
             # Btauout <- lapply(1:nsplits,function(split){
             #   Btau - Btauin[[split]]
@@ -2024,9 +2024,9 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
                 #compute row with gamma_{xy}
                 x<-groupsets[[i]][[j]]
                 x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
-                #sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
-                sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%
-                            (muhatp[pen]-muinitp[pen])))^2)/V[x]-1,na.rm=TRUE)/Kg[[i]][j]
+                sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
+                #sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%
+                #            (muhatp[pen]-muinitp[pen])))^2)/V[x]-1,na.rm=TRUE)/Kg[[i]][j]
               })
             })
           )
@@ -3106,8 +3106,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
 
 #Produce balanced folds----
 produceFolds <- function(nsam,outerfold,response,model=c("logistic", "cox", "other"),
-                         balance=TRUE,fixedfolds=FALSE){
-  if(fixedfolds) set.seed(3648310) #else set.seed(NULL)
+                         balance=TRUE){
   if(length(model)>1){
     if(all(is.element(response,c(0,1))) || is.factor(response)){
       model <- "logistic" 
@@ -3518,7 +3517,7 @@ cv.ecpc <- function(Y,X,type.measure=c("MSE", "AUC"),outerfolds=10,
   n <- dim(X)[1]
   p <- dim(X)[2]
   if(is.numeric(outerfolds)){
-    folds2<-produceFolds(n,outerfolds,Y,balance=balance,model=model,fixedfolds = FALSE) #produce folds balanced in response
+    folds2<-produceFolds(n,outerfolds,Y,balance=balance,model=model) #produce folds balanced in response
   }else{
     folds2 <- outerfolds
   }
