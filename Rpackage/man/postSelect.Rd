@@ -95,7 +95,7 @@ A list with the following elements:
 }
 
 \examples{
-\dontrun{
+\donttest{
 #####################
 # Simulate toy data #
 #####################

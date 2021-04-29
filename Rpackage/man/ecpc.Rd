@@ -3,7 +3,7 @@
 %- Also NEED an '\alias' for EACH other topic documented here.
 \title{
 %%  ~~function to do ... ~~
-ecpc co-data learning
+Fit adaptive multi-group ridge GLM with hypershrinkage
 }
 \description{
 %%  ~~ A concise (1-5 lines) description of what the function does. ~~
@@ -217,10 +217,11 @@ hierarchy.grouplevel <- obtainHierarchy(groupset = groupsetHierarchical)
 #visualise hierarchical groups:
 #visualiseGroupset(Groupset = groupsetHierarchical,groupset.grouplvl = hierarchy.grouplevel) 
  
+\donttest{ 
 ############ 
 # Fit ecpc #
 ############
-\dontrun{
+
 #fit ecpc for the two group sets, with ridge hypershrinkage for group set 1, 
 # and hierarchical lasso and ridge for group set 2.
 tic<-proc.time()[[3]]
@@ -239,22 +240,20 @@ summary(fit$betaPost) #estimated regression coefficients after posterior selecti
 
 c(fit$MSEecpc,fit$MSEridge) #mean squared error on test set for ecpc and ordinary ridge
 fit$MSEPost #MSE on the test set of ecpc after posterior selection
-}
 
 
 ###################################
 # Fit ecpc for multiple datatypes #
 ###################################
-# #library(multiridge)
-# 
-# rankBeta<-order(abs(Dat$beta)) #betas ranked in order of magnitude
-# 
-# #with multiple datatypes (given in datablocks) and informative groups
-# fit2 <- ecpc(Y=Dat$Y,X=Dat$Xctd[,rankBeta],groupsets=list(list(1:75,76:150,151:225,226:300)),
-#              groupsets.grouplvl=list(NULL),
-#              hypershrinkage=c("none"),
-#              model="linear",maxsel=c(5,10,15,20),
-#              Y2=Dat$Y2,X2=Dat$X2ctd[,rankBeta],
-#              datablocks = list(1:floor(p/2),(floor(p/2)+1):p))
+rankBeta<-order(abs(Dat$beta)) #betas ranked in order of magnitude
+ 
+#with multiple datatypes (given in datablocks) and informative groups
+fit2 <- ecpc(Y=Dat$Y,X=Dat$Xctd[,rankBeta],groupsets=list(list(1:75,76:150,151:225,226:300)),
+            groupsets.grouplvl=list(NULL),
+            hypershrinkage=c("none"),
+            model="linear",maxsel=c(5,10,15,20),
+            Y2=Dat$Y2,X2=Dat$X2ctd[,rankBeta],
+            datablocks = list(1:floor(p/2),(floor(p/2)+1):p))
+}
 
 }

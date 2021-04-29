@@ -63,14 +63,10 @@ Plot in ggplot object.
 \code{\link{visualiseGroupset}} to visualise group sets and \code{\link{visualiseGroupweights}} to plot estimated group weights.
 }
 \examples{
-# #required libraries
-# library(ggplot2)
-# library(dplyr)
-#
-# dfGrps <- data.frame(Groupset=rep(c(1,2),each=10),
-#                      Groupset.weight=c(rnorm(10,0,0.01),rnorm(10,1,0.05)),
-#                      Fold=rep(1:10,2))
-# GroupsetNames <- c("Groupset1","Groupset2")
-# visualiseGroupsetweights(dfGrps, GroupsetNames, hist = FALSE, boxplot = TRUE,jitter=TRUE)
+dfGrps <- data.frame(Groupset=rep(c(1,2),each=10),
+                     Groupset.weight=c(rnorm(10,0,0.01),rnorm(10,1,0.05)),
+                     Fold=rep(1:10,2))
+GroupsetNames <- c("Groupset1","Groupset2")
+visualiseGroupsetweights(dfGrps, GroupsetNames, hist = FALSE, boxplot = TRUE,jitter=TRUE)
 }
 
