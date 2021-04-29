@@ -334,29 +334,34 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
     XXbl <- multiridge::createXXblocks(lapply(datablocks,function(ind) X[,intersect(ind,ind[!(ind%in%unpen)])]))
     
     #Find initial lambda: fast CV per data block, separately using SVD. CV is done using the penalized package
-    if(sum((1:p)%in%unpen)>0){
-      capture.output({cvperblock <- multiridge::fastCV2(Xbl,Y=Y,kfold=fold,fixedfolds = FALSE,
-                                        X1=X[,(1:p)%in%unpen],intercept=intrcpt)})
+    if(!is.numeric(lambda)){
+      if(sum((1:p)%in%unpen)>0){
+        capture.output({cvperblock <- multiridge::fastCV2(Xbl,Y=Y,kfold=fold,fixedfolds = FALSE,
+                                                          X1=X[,(1:p)%in%unpen],intercept=intrcpt)})
+      }else{
+        capture.output({cvperblock <- multiridge::fastCV2(Xbl,Y=Y,kfold=fold,fixedfolds = FALSE,
+                                                          intercept=intrcpt)})
+      }
+      lambdas <- cvperblock$lambdas
+      lambdas[lambdas==Inf] <- 10^6
+      
+      #Find joint lambdas:
+      leftout <- multiridge::CVfolds(Y=Y,kfold=fold,nrepeat=3,fixedfolds = FALSE) #Create (repeated) CV-splits of the data
+      if(sum((1:p)%in%unpen)>0){
+        jointlambdas <- multiridge::optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
+                                                   X1=X[,(1:p)%in%unpen],intercept=intrcpt,
+                                                   score=ifelse(model == "linear", "mse", "loglik"),model=model)
+      }else{
+        jointlambdas <- multiridge::optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
+                                                   intercept=intrcpt,
+                                                   score=ifelse(model == "linear", "mse", "loglik"),model=model)
+      }
+      
+      lambda <- jointlambdas$optpen
     }else{
-      capture.output({cvperblock <- multiridge::fastCV2(Xbl,Y=Y,kfold=fold,fixedfolds = FALSE,
-                                        intercept=intrcpt)})
-    }
-    lambdas <- cvperblock$lambdas
-    lambdas[lambdas==Inf] <- 10^6
-    
-    #Find joint lambdas:
-    leftout <- multiridge::CVfolds(Y=Y,kfold=fold,nrepeat=3,fixedfolds = FALSE) #Create (repeated) CV-splits of the data
-    if(sum((1:p)%in%unpen)>0){
-      jointlambdas <- multiridge::optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
-                                     X1=X[,(1:p)%in%unpen],intercept=intrcpt,
-                                     score=ifelse(model == "linear", "mse", "loglik"),model=model)
-    }else{
-      jointlambdas <- multiridge::optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
-                                     intercept=intrcpt,
-                                     score=ifelse(model == "linear", "mse", "loglik"),model=model)
+      if(length(lambda)==1) lambdas <- rep(lambda, max(datablockNo))
     }
     
-    lambda <- jointlambdas$optpen
     lambdap <- rep(0,p)
     lambdap[!((1:p)%in%unpen)] <- lambda[datablockNo[!((1:p)%in%unpen)]]
 
@@ -512,9 +517,9 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
                if(intrcpt){
                  Xunpen <- cbind(X[,penfctr==0],rep(1,n))
                }
-               
-               par <- .mlestlin(Y=Y,XXt=XXt,Xrowsum=Xrowsum,
+               par <- .mlestlin(Y=Y,XXt=XXt,Xrowsum=Xrowsum,intrcpt=intrcpt,
                                 lambda=lambda,sigmasq=sigmasq,mu=mutrgt,tausq=tausq) #use maximum marginal likelihood
+               
                lambda <- par[1] 
                sigmahat <- par[2] #sigma could be optimised with CV in the end if not known
                muhat[,1] <- par[3] 
@@ -1316,7 +1321,7 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
               })
             ),c(sum(G),sum(G)),byrow=TRUE) #reshape to matrix of size sum(G)xsum(G)
             
-            constA <- mean(diag(A),na.rm=TRUE)
+            constA <- 1 #mean(diag(A),na.rm=TRUE)
             Btau <- Btau/constA
             A <- A/constA
             
@@ -1376,7 +1381,7 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
                     })}))
                   }, simplify="array")
                 })
-              ),c(sum(G),sum(G)),byrow=TRUE)/constA*2 #reshape to matrix of size sum(G)xsum(G)
+              ),c(sum(G),sum(G)),byrow=TRUE)/constA #reshape to matrix of size sum(G)xsum(G)
             })
             #weight matrix
             AinAcc <- lapply(1:nsplits,function(i){
@@ -1394,13 +1399,13 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
                   sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1,na.rm=TRUE)/Kg[[i]][j]
                 })
               })
-            )/constA*2
+            )/constA
             })
             # Btauout <- lapply(1:nsplits,function(split){
             #   Btau - Btauin[[split]]
             # })
             Aout <- lapply(1:nsplits,function(split){
-              2*A - Ain[[split]]
+              A - Ain[[split]]
             })
             
             #-3.3.3|1.2.3 Define function RSSlambdatau, #################################################
@@ -3334,9 +3339,10 @@ createGroupset <- function(values,index=NULL,grsize=NULL,ngroup=10,
 
 
 #Estimate maximum marginal likelihood estimates for linear model----
-.mlestlin <- function(Y,XXt,Xrowsum,lambda=NaN,sigmasq=NaN,mu=NaN,tausq=NaN){
+.mlestlin <- function(Y,XXt,Xrowsum,lambda=NaN,sigmasq=NaN,mu=NaN,tausq=NaN,intrcpt=TRUE){
   #lambda,sigmasq,mu are possibly fixed
   maxv <- var(Y)
+  if(intrcpt) Y <- Y - mean(Y)
   
   #p<-dim(X)[2]
   n<-length(Y)
