@@ -491,7 +491,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
                  Xunpen <- cbind(X[,penfctr==0],rep(1,n))
                }
                
-               par <- .mlestlin(Y=Y,XXt=XXt,Xrowsum=Xrowsum,
+               par <- .mlestlin(Y=Y,XXt=XXt,Xrowsum=Xrowsum,intrcpt=intrcpt,
                                 lambda=lambda,sigmasq=sigmasq,mu=mutrgt,tausq=tausq) #use maximum marginal likelihood
                lambda <- par[1] 
                sigmahat <- par[2] #sigma could be optimised with CV in the end if not known
@@ -3270,9 +3270,10 @@ createGroupset <- function(values,index=NULL,grsize=NULL,ngroup=10,
 
 
 #Estimate maximum marginal likelihood estimates for linear model----
-.mlestlin <- function(Y,XXt,Xrowsum,lambda=NaN,sigmasq=NaN,mu=NaN,tausq=NaN){
+.mlestlin <- function(Y,XXt,Xrowsum,lambda=NaN,sigmasq=NaN,mu=NaN,tausq=NaN,intrcpt=TRUE){
   #lambda,sigmasq,mu are possibly fixed
   maxv <- var(Y)
+  if(intrcpt) Y <- Y-mean(Y)
   
   #p<-dim(X)[2]
   n<-length(Y)
