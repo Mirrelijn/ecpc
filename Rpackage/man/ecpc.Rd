@@ -180,6 +180,7 @@ Mirrelijn van Nee, Lodewyk Wessels, Mark van de Wiel
 %%% ~~objects to See Also as \code{\link{help}}, ~~~
 %}
 \examples{
+\donttest{ 
 #####################
 # Simulate toy data #
 #####################
@@ -217,7 +218,6 @@ hierarchy.grouplevel <- obtainHierarchy(groupset = groupsetHierarchical)
 #visualise hierarchical groups:
 #visualiseGroupset(Groupset = groupsetHierarchical,groupset.grouplvl = hierarchy.grouplevel) 
  
-\donttest{ 
 ############ 
 # Fit ecpc #
 ############
