@@ -485,12 +485,13 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
                
                XXt <- X[,penfctr!=0]%*%t(X[,penfctr!=0])
                
-               Xunpen <- cbind(X[,penfctr==0]) #if empty vector, no unpenalised and no intercept
-               if(intrcpt){
-                 Xunpen <- cbind(X[,penfctr==0],rep(1,n))
+               Xunpen <- NULL #if empty vector, no unpenalised and no intercept
+               if(sum(penfctr==0)>0){
+                 Xunpen <- X[,penfctr==0]
                }
                
-               par <- .mlestlin(Y=Y,XXt=XXt,Xrowsum=Xrowsum,intrcpt=intrcpt,
+               par <- .mlestlin(Y=Y,XXt=XXt,Xrowsum=Xrowsum,
+                                intrcpt=FALSE,Xunpen=NULL, #TD: adapt for intercept and Xunpen
                                 lambda=lambda,sigmasq=sigmasq,mu=mutrgt,tausq=tausq) #use maximum marginal likelihood
                lambda <- par[1] 
                sigmahat <- par[2] #sigma could be optimised with CV in the end if not known
@@ -3269,10 +3270,10 @@ createGroupset <- function(values,index=NULL,grsize=NULL,ngroup=10,
 
 
 #Estimate maximum marginal likelihood estimates for linear model----
-.mlestlin <- function(Y,XXt,Xrowsum,lambda=NaN,sigmasq=NaN,mu=NaN,tausq=NaN,intrcpt=TRUE){
+.mlestlin <- function(Y,XXt,Xrowsum,Xunpen=NULL,lambda=NaN,sigmasq=NaN,mu=NaN,tausq=NaN,intrcpt=TRUE){
   #lambda,sigmasq,mu are possibly fixed
   maxv <- var(Y)
-  if(intrcpt) Y <- Y-mean(Y)
+  #if(intrcpt) Y <- Y-mean(Y)
   
   #p<-dim(X)[2]
   n<-length(Y)
@@ -3283,6 +3284,7 @@ createGroupset <- function(values,index=NULL,grsize=NULL,ngroup=10,
   if(prms=='s'||prms=='sm'){sigmasq <- lambda*tausq; prms <- gsub("s","",prms)}
   switch(prms,
          'lsmt'={ #lambda, sigma, mu, tau unknown
+           #TD: add unpenalised covariates
            sim2 = function(ts){
              tausq<-ts[1];sigmasq<-ts[2];mu<-ts[3]
              varY <- XXt * exp(tausq) + diag(rep(1,n))*exp(sigmasq)
@@ -3295,6 +3297,7 @@ createGroupset <- function(values,index=NULL,grsize=NULL,ngroup=10,
            mu <- op$par[3]; lambda <- sigmasq/tausq
          },
          'lsm'={ #lambda, sigma, mu unknown, tau known
+           #TD: add unpenalised covariates
            sim2 = function(ts){
              sigmasq<-ts[1];mu<-ts[2]
              varY <- XXt * exp(tausq) + diag(rep(1,n))*exp(sigmasq)
@@ -3307,19 +3310,86 @@ createGroupset <- function(values,index=NULL,grsize=NULL,ngroup=10,
            mu <- op$par[2]; lambda <- sigmasq/tausq
          },
          'lst'={ #lambda, sigma, tau unknown, mu known
+           minsig <- 0#10^-5*maxv
            sim2 = function(ts){
-             tausq<-ts[1];sigmasq<-ts[2]
-             varY <- XXt * exp(tausq) + diag(rep(1,n))*exp(sigmasq)
-             meanY <- mu*Xrowsum 
+             tausq<-exp(ts[1]);sigmasq<- minsig+exp(ts[2])
+             varY <- XXt * tausq + diag(rep(1,n))*sigmasq
+             meanY <- mu*Xrowsum
+
+             #compute unpenalised variable estimates given lambda, sigma, tausq
+             #add this to meanY
+             if(length(dim(Xunpen))>0 | intrcpt){
+               XtDinvX <- multiridge::SigmaFromBlocks(XXblocks = list(XXt),sigmasq/tausq)
+               if(intrcpt) Xunpen <- cbind(Xunpen,rep(1,n))
+               if(intrcpt && dim(Xunpen)[2]==1){
+                 betaunpenML <- sum(Y)/n
+               }else{
+                 temp <- solve(XtDinvX+diag(rep(1,n)),Xunpen)
+                 betaunpenML <- solve(t(Xunpen)%*%temp , t(temp)%*%Y)
+               }
+               meanY <- meanY + Xunpen%*%betaunpenML
+             }
+
              mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=TRUE)
              return(mlk)
            }
            op <- optim(c(log(0.01),log(maxv)),sim2)
-           tausq <- exp(op$par[1]); sigmasq <- exp(op$par[2])
+           tausq <- exp(op$par[1]); sigmasq <- minsig + exp(op$par[2])
            lambda <- sigmasq/tausq
-
+           
+           # #optimise over lambda, and sigmahat given lambda
+           # minlam <- 10^-3
+           # sim2 = function(ts){
+           #   lambda<-minlam + exp(ts[1])
+           #   
+           #   meanY <- mu*Xrowsum 
+           #   
+           #   #MMLE sigma known analytically given lambda
+           #   if(length(dim(Xunpen))>0 | intrcpt){
+           #     XtDinvX <- multiridge::SigmaFromBlocks(XXblocks = list(XXt),lambda)
+           #     if(intrcpt) Xunpen <- cbind(Xunpen,rep(1,n))
+           #     if(intrcpt && dim(Xunpen)[2]==1){
+           #       betaunpenML <- sum(Y)/n
+           #     }else{
+           #       temp <- solve(XtDinvX+diag(rep(1,n)),Xunpen)
+           #       betaunpenML <- solve(t(Xunpen)%*%temp , t(temp)%*%Y)
+           #     }
+           #     sigmasq <- c(t(Y-Xunpen%*%betaunpenML)%*%solve(XtDinvX+diag(rep(1,n)),Y-Xunpen%*%betaunpenML)/n)
+           #     meanY <- meanY + Xunpen%*%betaunpenML
+           #   }else{
+           #     sigmasq <- c(t(Y)%*%solve(XtDinvX+diag(rep(1,n)),Y)/n)
+           #   }
+           #   tausq <- sigmasq/lambda
+           #   varY <- XXt * tausq + diag(rep(1,n))*sigmasq
+           #   
+           #   mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=TRUE)
+           #   return(mlk)
+           # }
+           # op <- optim(c(log(0.01)),sim2,method="Brent",lower=log(1e-5),upper=log(10^6))
+           # lambda <- minlam + exp(op$par[1])
+           # #MMLE sigma known analytically given lambda
+           # if(length(dim(Xunpen))>0 | intrcpt){
+           #   XtDinvX <- multiridge::SigmaFromBlocks(XXblocks = list(XXt),lambda)
+           #   if(intrcpt) Xunpen <- cbind(Xunpen,rep(1,n))
+           #   if(intrcpt && dim(Xunpen)[2]==1){
+           #     betaunpenML <- sum(Y)/n
+           #   }else{
+           #     temp <- solve(XtDinvX+diag(rep(1,n)),Xunpen)
+           #     betaunpenML <- solve(t(Xunpen)%*%temp , t(temp)%*%Y)
+           #   }
+           #   sigmasq <- c(t(Y-Xunpen%*%betaunpenML)%*%solve(XtDinvX+diag(rep(1,n)),Y-Xunpen%*%betaunpenML)/n)
+           # }else{
+           #   sigmasq <- c(t(Y)%*%solve(XtDinvX+diag(rep(1,n)),Y)/n)
+           # }
+           # tausq <- sigmasq/lambda
+           
+           # lambdaseq <- 10^seq(-5,6,length.out=30)
+           # MLs <- sapply(log(lambdaseq),sim2)
+           # plot(log(lambdaseq),MLs)
+           # abline(v=log(lambda),col="red")
          },
          'lmt'={ #lambda, tau, mu unknown, sigma known
+           #TD: add unpenalised variables
            sim2 = function(ts){
              tausq<-ts[1]; mu <- ts[2]
              varY <- XXt * exp(tausq) + diag(rep(1,n))*sigmasq
@@ -3333,13 +3403,28 @@ createGroupset <- function(values,index=NULL,grsize=NULL,ngroup=10,
          },
          'lt'={ #lambda, tau unknown, sigma, mu known
            sim2 = function(ts){
-             tausq<-ts[1];
-             varY <- XXt * exp(tausq) + diag(rep(1,n))*sigmasq
+             tausq<-exp(ts[1]);
+             varY <- XXt * tausq + diag(rep(1,n))*sigmasq
              meanY <- mu*Xrowsum 
+             
+             #compute unpenalised variable estimates given lambda, sigma, tausq
+             #add this to meanY
+             if(length(dim(Xunpen))>0 | intrcpt){
+               XtDinvX <- multiridge::SigmaFromBlocks(XXblocks = list(XXt),sigmasq/tausq)
+               if(intrcpt) Xunpen <- cbind(Xunpen,rep(1,n))
+               if(intrcpt && dim(Xunpen)[2]==1){
+                 betaunpenML <- sum(Y)/n
+               }else{
+                 temp <- solve(XtDinvX+diag(rep(1,n)),Xunpen)
+                 betaunpenML <- solve(t(Xunpen)%*%temp , t(temp)%*%Y)
+               }
+               meanY <- meanY + Xunpen%*%betaunpenML
+             }
+             
              mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=TRUE)
              return(mlk)
            }
-           op <- optim(c(log(0.01)),sim2,method="Brent",lower=log(1e-10),upper=log(100))
+           op <- optim(c(log(0.01)),sim2,method="Brent",lower=log(1e-5),upper=log(10^6))
            #op <- optimize(sim2,c(-100,100))
            #op <- optim(c(log(0.01)),sim2)
            #browser()
@@ -3362,15 +3447,47 @@ createGroupset <- function(values,index=NULL,grsize=NULL,ngroup=10,
            #mlests <- c(sigmasq,sigmasq/lambda)
          },
          'st'={ #sigma, tau unknown, lambda, mu known
-           sim2 = function(ts){
-             tausq<-log(exp(ts)/lambda); sigmasq<-ts
-             varY <- XXt * exp(tausq) + diag(rep(1,n))*exp(sigmasq)
-             meanY <- mu*Xrowsum 
-             mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=TRUE)
-             return(mlk)
+           #MMLE sigma known analytically
+           if(length(dim(Xunpen))>0 | intrcpt){
+             XtDinvX <- multiridge::SigmaFromBlocks(XXblocks = list(XXt),lambda)
+             if(intrcpt) Xunpen <- cbind(Xunpen,rep(1,n))
+             if(intrcpt && dim(Xunpen)[2]==1){
+               betaunpenML <- sum(Y)/n
+             }else{
+               temp <- solve(XtDinvX+diag(rep(1,n)),Xunpen)
+               betaunpenML <- solve(t(Xunpen)%*%temp , t(temp)%*%Y)
+             }
+             sigmasq <- c(t(Y-Xunpen%*%betaunpenML)%*%solve(XtDinvX+diag(rep(1,n)),Y-Xunpen%*%betaunpenML)/n)
+           }else{
+             sigmasq <- c(t(Y)%*%solve(XtDinvX+diag(rep(1,n)),Y)/n)
            }
-           op <- optim(c(log(maxv)),sim2,method="Brent",lower=log(1e-5),upper=log(2*maxv))
-           tausq <- exp(op$par[1])/lambda; sigmasq <- exp(op$par[1])
+           tausq <- sigmasq/lambda
+           
+           # #or minimise numerically:
+           # sim2 = function(ts){
+           #   tausq<-exp(ts)/lambda; sigmasq<-exp(ts)
+           #   varY <- XXt * tausq + diag(rep(1,n))*sigmasq
+           #   meanY <- mu*Xrowsum 
+           #   
+           #   #compute unpenalised variable estimates given lambda, sigma, tausq
+           #   #add this to meanY
+           #   if(length(dim(Xunpen))>0 | intrcpt){
+           #     XtDinvX <- multiridge::SigmaFromBlocks(XXblocks = list(XXt),lambda)
+           #     if(intrcpt) Xunpen <- cbind(Xunpen,rep(1,n))
+           #     if(intrcpt && dim(Xunpen)[2]==1){
+           #       betaunpenML <- sum(Y)/n
+           #     }else{
+           #       temp <- solve(XtDinvX+diag(rep(1,n)),Xunpen)
+           #       betaunpenML <- solve(t(Xunpen)%*%temp , t(temp)%*%Y)
+           #     }
+           #     meanY <- meanY + Xunpen%*%betaunpenML
+           #   }
+           #   
+           #   mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=TRUE)
+           #   return(mlk)
+           # }
+           # op <- optim(c(log(maxv)),sim2,method="Brent",lower=log(1e-5),upper=log(2*maxv))
+           # tausq <- exp(op$par[1])/lambda; sigmasq <- exp(op$par[1])
            
            # sigmaseq <- 10^seq(-1,log10(5*maxv),length.out=30)
            # MLs <- sapply(log(sigmaseq),sim2)
@@ -3379,13 +3496,28 @@ createGroupset <- function(values,index=NULL,grsize=NULL,ngroup=10,
          },
          'ls'={ #lambda, sigma unknown, tau, mu known
            sim2 = function(ts){
-             sigmasq<-ts[1];
-             varY <- XXt * exp(tausq) + diag(rep(1,n))*sigmasq
+             sigmasq<-exp(ts[1]);
+             varY <- XXt * tausq + diag(rep(1,n))*sigmasq
              meanY <- mu*Xrowsum 
+             
+             #compute unpenalised variable estimates given lambda, sigma, tausq
+             #add this to meanY
+             if(length(dim(Xunpen))>0 | intrcpt){
+               XtDinvX <- multiridge::SigmaFromBlocks(XXblocks = list(XXt),sigmasq/tausq)
+               if(intrcpt) Xunpen <- cbind(Xunpen,rep(1,n))
+               if(intrcpt && dim(Xunpen)[2]==1){
+                 betaunpenML <- sum(Y)/n
+               }else{
+                 temp <- solve(XtDinvX+diag(rep(1,n)),Xunpen)
+                 betaunpenML <- solve(t(Xunpen)%*%temp , t(temp)%*%Y)
+               }
+               meanY <- meanY + Xunpen%*%betaunpenML
+             }
+             
              mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=TRUE)
              return(mlk)
            }
-           op <- optim(c(log(maxv)),sim2,method="Brent",lower=log(1e-10),upper=log(2*maxv))
+           op <- optim(c(log(maxv)),sim2,method="Brent",lower=log(1e-6),upper=log(2*maxv))
            sigmasq <- exp(op$par[1])
            lambda <- sigmasq/tausq
          },
