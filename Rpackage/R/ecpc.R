@@ -642,7 +642,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
              #Cross-validation lambda
              if((!is.nan(compare) & grepl("CV",compare)) | grepl("CV",lambda)){
                if(grepl("glmnet",lambda)){ 
-                 lambdaGLM<-glmnet::cv.glmnet(X,Y,nfolds=fold,alpha=0,family=fml,
+                 lambdaGLM<-glmnet::cv.glmnet(X,as.matrix(Y),nfolds=fold,alpha=0,family=fml,
                                       standardize = FALSE,
                                       penalty.factor=penfctr,keep=TRUE) #alpha=0 for ridge
                }#else if(grepl("penalized",lambda)){ #use penalized to do CV
@@ -706,8 +706,8 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
              lambdap[(1:p)%in%unpen] <- 0
              muinitp<- as.vector(c(muhat[,1])%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p
              muinitp[(1:p)%in%unpen] <- 0
-             glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
-                                 lambda = lambda/n*sd_y,family=fml,
+             glmGRtrgt <- glmnet::glmnet(X,as.matrix(Y),alpha=0,
+                                 lambda = 2*lambda/n*sd_y,family=fml,
                                  offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], standardize = FALSE,
                                  penalty.factor=penfctr,thresh = 10^-10)
              betasinit <- as.vector(glmGRtrgt$beta)
@@ -847,7 +847,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
       muinitp<- as.vector(c(muhat[,1])%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p 
       muinitp[(1:p)%in%unpen] <- 0
       if(model=="cox"){
-        glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
+        glmGRtrgt <- glmnet::glmnet(X,as.matrix(Y),alpha=0,
                         lambda = lambda/n*sd_y*2,family=fml,
                         offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], standardize = FALSE,
                         penalty.factor=penfctr)
@@ -2314,7 +2314,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
                                                        x=c(1/sqrt(lambdap[pen]/lambdaoverall))))
       
       if(model=="cox"){
-        glmGR <- glmnet::glmnet(Xacc,Y,alpha=0,
+        glmGR <- glmnet::glmnet(Xacc,as.matrix(Y),alpha=0,
                         lambda = lambdaoverall/n*sd_y2*2,family=fml,
                         offset = X[,!((1:p)%in%unpen)] %*% muhatp[!((1:p)%in%unpen)], standardize = FALSE,
                         penalty.factor=penfctr, thresh=10^-10)
@@ -2351,9 +2351,11 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
       }else if(model=='cox'){ 
         expXb<-exp(X %*% c(beta))
         h0 <- sapply(1:length(Y[,1]),function(i){Y[i,2]/sum(expXb[Y[,1]>=Y[i,1]])})#updated baseline hazard in censored times for left out samples
-        H0 <- sapply(Y2[,1],function(Ti){sum(h0[Y[,1]<=Ti])})
-        YpredGR[,Itr+1] <- H0*exp(X2 %*% beta)
-        MSEecpc[Itr+1]<- sum((YpredGR[,Itr+1]-Y2[,2])^2)/n2
+        H0 <- sapply(sort(c(Y[,1],Y2[,1])),function(Ti){sum(h0[Y[,1]<=Ti])})
+        YpredGR <- outer(c(exp(X2 %*% beta)),c(H0))
+        colnames(YpredGR)<-paste("Time",signif(sort(c(Y[,1],Y2[,1]))),6)  
+        YpredGR <- cbind(rep(NA,n2),YpredGR) #first column is removed in returning output
+        MSEecpc[Itr+1]<- NaN #sum((YpredGR[,Itr+1]-Y2[,2])^2)/n2
       }
     }
     
@@ -2398,7 +2400,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
     Xacc[,pen] <- as.matrix(X[,pen] %*% Matrix::sparseMatrix(i=1:length(pen),j=1:length(pen),
                                                      x=c(1/sqrt(lambdaridge[datablockNo[pen]]/lambdaoverall))))
     if(model=="cox"){
-      glmR <- glmnet::glmnet(Xacc,Y,family=fml,alpha=0,
+      glmR <- glmnet::glmnet(Xacc,as.matrix(Y),family=fml,alpha=0,
                      lambda=lambdaoverall*sd_y/n*2,standardize = FALSE,
                      penalty.factor=penfctr,thresh = 10^-10)
     }else{
@@ -2425,9 +2427,10 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
       }else if(model=="cox"){
         expXb<-exp(X %*% c(betaridge))
         h0 <- sapply(1:length(Y[,1]),function(i){Y[i,2]/sum(expXb[Y[,1]>=Y[i,1]])})#updated baseline hazard in censored times for left out samples
-        H0 <- sapply(Y2[,1],function(Ti){sum(h0[Y[,1]<=Ti])})
-        Ypredridge <- H0*exp(X2 %*% betaridge)
-        MSEridge<- sum((Ypredridge-Y2[,2])^2)/n2
+        H0 <- sapply(sort(c(Y[,1],Y2[,1])),function(Ti){sum(h0[Y[,1]<=Ti])})
+        Ypredridge <- outer(c(exp(X2 %*% betaridge)),c(H0))
+        colnames(Ypredridge)<-paste("Time",signif(sort(c(Y[,1],Y2[,1]))),6)
+        MSEridge<- NaN #sum((Ypredridge-Y2[,2])^2)/n2
       }
     }
   }
@@ -2590,9 +2593,10 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           }else if(model=='cox'){ 
             expXbPost<-exp(X %*% c(betaPost))
             h0 <- sapply(1:length(Y[,1]),function(i){Y[i,2]/sum(expXbPost[Y[,1]>=Y[i,1]])})#updated baseline hazard in censored times for left out samples
-            H0 <- sapply(Y2[,1],function(Ti){sum(h0[Y[,1]<=Ti])})
-            YpredPost <- H0*exp(X2 %*% c(betaPost))
-            MSEPost<- sum((YpredPost-Y2[,2])^2)/length(Y2[,2])
+            H0 <- sapply(sort(c(Y[,1],Y2[,1])),function(Ti){sum(h0[Y[,1]<=Ti])})
+            YpredPost <- outer(c(exp(X2 %*% betaPost)),c(H0))
+            colnames(YpredPost)<-paste("Time",signif(sort(c(Y[,1],Y2[,1]))),6)  
+            MSEPost<- NaN #sum((YpredPost-Y2[,2])^2)/length(Y2[,2])
           }
           
           output$MSEPost <- MSEPost #MSE on independent data set (if given)
@@ -2619,7 +2623,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
             return(p - maxselec)
           else {
             if(model=="cox"){
-              glmPost <- glmnet::glmnet(Xacc[,nonzeros],Y,alpha=alpha,
+              glmPost <- glmnet::glmnet(Xacc[,nonzeros],as.matrix(Y),alpha=alpha,
                               lambda = lam2*2/(1-alpha),family=fml,
                               offset = offset, standardize = FALSE,
                               penalty.factor=penfctr[nonzeros], thresh=10^-10)
@@ -2650,7 +2654,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
         
         #for found alpha, refit model to see which beta are selected
         if(model=="cox"){
-          glmPost0 <- glmnet::glmnet(Xacc[,nonzeros],Y,alpha=alpha,
+          glmPost0 <- glmnet::glmnet(Xacc[,nonzeros],as.matrix(Y),alpha=alpha,
                            lambda = lam2*2/(1-alpha),family=fml,
                            offset = offset, standardize = FALSE,
                            penalty.factor=penfctr[nonzeros], thresh=10^-10)
@@ -2675,7 +2679,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           #recalibrate overall lambda using cross-validation on selected variables only
           if(grepl("dense2",postselection)){ 
             if(model=="cox"){
-              lambdaGLM<-glmnet::cv.glmnet(Xacc[,whichPostboth, drop=FALSE],Y,alpha=0,
+              lambdaGLM<-glmnet::cv.glmnet(Xacc[,whichPostboth, drop=FALSE],as.matrix(Y),alpha=0,
                                    family=fml,offset = offset ,standardize = FALSE,
                                    penalty.factor=penfctr[whichPostboth], thresh=10^-10) #alpha=0 for ridge
               lam2<-lambdaGLM$lambda.min
@@ -2689,7 +2693,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           
           #Recompute beta using only selected beta and group ridge penalty (without lasso penalty)
           if(model=="cox"){
-            glmPost <- glmnet::glmnet(Xacc[,whichPostboth, drop=FALSE],Y,alpha=0,
+            glmPost <- glmnet::glmnet(Xacc[,whichPostboth, drop=FALSE],as.matrix(Y),alpha=0,
                             lambda = lam2,family=fml,
                             offset = offset ,standardize = FALSE,
                             penalty.factor=penfctr[whichPostboth], thresh=10^-10)
@@ -2713,7 +2717,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           #output$offsetPost <- offset #offset used in Post
         }else{# if(grepl("sparse",postselection)){ #refit standard ridge with newly cross-validated lambda
           if(model=="cox"){
-            lambdaGLM<-glmnet::cv.glmnet(X[,whichPostboth, drop=FALSE],Y,alpha=0,family=fml,
+            lambdaGLM<-glmnet::cv.glmnet(X[,whichPostboth, drop=FALSE],as.matrix(Y),alpha=0,family=fml,
                                  standardize = FALSE,penalty.factor=penfctr[whichPostboth]) #alpha=0 for ridge
             lam2<-lambdaGLM$lambda.min
           }else{
@@ -2722,7 +2726,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
             lam2<-lambdaGLM$lambda.min
           }
           if(model=="cox"){
-            glmPost <- glmnet::glmnet(X[,whichPostboth, drop=FALSE],Y,alpha=0,
+            glmPost <- glmnet::glmnet(X[,whichPostboth, drop=FALSE],as.matrix(Y),alpha=0,
                             lambda = lam2,family=fml,
                             offset = offset ,standardize = FALSE,
                             penalty.factor=penfctr[whichPostboth], thresh=10^-10)
@@ -2757,9 +2761,10 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           }else if(model=='cox'){ 
             expXbPost<-exp(X %*% c(betaPost))
             h0 <- sapply(1:length(Y[,1]),function(i){Y[i,2]/sum(expXbPost[Y[,1]>=Y[i,1]])})#updated baseline hazard in censored times for left out samples
-            H0 <- sapply(Y2[,1],function(Ti){sum(h0[Y[,1]<=Ti])})
-            YpredPost <- H0*exp(X2 %*% c(betaPost))
-            MSEPost <- sum((YpredPost-Y2[,2])^2)/length(Y2[,2])
+            H0 <- sapply(sort(c(Y[,1],Y2[,1])),function(Ti){sum(h0[Y[,1]<=Ti])})
+            YpredPost <- outer(c(exp(X2 %*% betaPost)),c(H0))
+            colnames(YpredPost)<-paste("Time",signif(sort(c(Y[,1],Y2[,1]))),6)  
+            MSEPost<- NaN #sum((YpredPost-Y2[,2])^2)/length(Y2[,2])
           }
           
           output$MSEPost <- MSEPost #MSE on independent data set (if given)
@@ -2819,9 +2824,10 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
             }else if(model=='cox'){ 
               expXbPost<-exp(X %*% c(betaPost))
               h0 <- sapply(1:length(Y[,1]),function(i){Y[i,2]/sum(expXbPost[Y[,1]>=Y[i,1]])})#updated baseline hazard in censored times for left out samples
-              H0 <- sapply(Y2[,1],function(Ti){sum(h0[Y[,1]<=Ti])})
-              YpredPost <- H0*exp(X2 %*% c(betaPost))
-              MSEPost <- sum((YpredPost-Y2[,2])^2)/length(Y2[,2])
+              H0 <- sapply(sort(c(Y[,1],Y2[,1])),function(Ti){sum(h0[Y[,1]<=Ti])})
+              YpredPost <- outer(c(exp(X2 %*% betaPost)),c(H0))
+              colnames(YpredPost)<-paste("Time",signif(sort(c(Y[,1],Y2[,1]))),6)  
+              MSEPost<- NaN #sum((YpredPost-Y2[,2])^2)/length(Y2[,2])
             }
             
             output$MSEPost <- MSEPost #MSE on independent data set (if given)
@@ -2871,9 +2877,10 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
             }else if(model=='cox'){ 
               expXbPost<-exp(X %*% c(betaPost))
               h0 <- sapply(1:length(Y[,1]),function(i){Y[i,2]/sum(expXbPost[Y[,1]>=Y[i,1]])})#updated baseline hazard in censored times for left out samples
-              H0 <- sapply(Y2[,1],function(Ti){sum(h0[Y[,1]<=Ti])})
-              YpredPost <- H0*exp(X2 %*% c(betaPost))
-              MSEPost<- sum((YpredPost-Y2[,2])^2)/length(Y2[,2])
+              H0 <- sapply(sort(c(Y[,1],Y2[,1])),function(Ti){sum(h0[Y[,1]<=Ti])})
+              YpredPost <- outer(c(exp(X2 %*% betaPost)),c(H0))
+              colnames(YpredPost)<-paste("Time",signif(sort(c(Y[,1],Y2[,1]))),6)  
+              MSEPost<- NaN #sum((YpredPost-Y2[,2])^2)/length(Y2[,2])
             }
             
             output$MSEPost <- MSEPost #MSE on independent data set (if given)
@@ -2949,9 +2956,10 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
             }else if(model=='cox'){ 
               expXbPost<-exp(X %*% c(betaPost))
               h0 <- sapply(1:length(Y[,1]),function(i){Y[i,2]/sum(expXbPost[Y[,1]>=Y[i,1]])})#updated baseline hazard in censored times for left out samples
-              H0 <- sapply(Y2[,1],function(Ti){sum(h0[Y[,1]<=Ti])})
-              YpredPost <- H0*exp(X2 %*% c(betaPost))
-              MSEPost<- sum((YpredPost-Y2[,2])^2)/length(Y2[,2])
+              H0 <- sapply(sort(c(Y[,1],Y2[,1])),function(Ti){sum(h0[Y[,1]<=Ti])})
+              YpredPost <- outer(c(exp(X2 %*% betaPost)),c(H0))
+              colnames(YpredPost)<-paste("Time",signif(sort(c(Y[,1],Y2[,1]))),6)  
+              MSEPost<- NaN #sum((YpredPost-Y2[,2])^2)/length(Y2[,2])
             }
           
             output$MSEPost <- MSEPost #MSE on independent data set (if given)
@@ -3017,7 +3025,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
                                                            x=c(1/sqrt(lambdap[pen]/lambdaoverall))) )
 
           if(model=="cox"){
-            glmPost <- glmnet::glmnet(Xacc[,indAll, drop=FALSE],Y,alpha=0,
+            glmPost <- glmnet::glmnet(Xacc[,indAll, drop=FALSE],as.matrix(Y),alpha=0,
                             lambda = lam2*2,family=fml,
                             offset = offset ,standardize = FALSE,
                             penalty.factor=penfctr[indAll], thresh=10^-10)
@@ -3032,7 +3040,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           betaPost[indPost] <- c(1/sqrt(lambdap[indPost]/lambdaoverall)) * betaPost[indPost] + muhatp[indPost]
         }else{ #sparse; refit with newly cross-validated lambda
           if(model=="cox"){
-            lambdaGLM<-glmnet::cv.glmnet(X[,indAll, drop=FALSE],Y,alpha=0,family=fml,
+            lambdaGLM<-glmnet::cv.glmnet(X[,indAll, drop=FALSE],as.matrix(Y),alpha=0,family=fml,
                                  standardize = FALSE,penalty.factor=penfctr[indAll]) #alpha=0 for ridge
             lam2<-lambdaGLM$lambda.min
           }else{
@@ -3041,7 +3049,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
             lam2<-lambdaGLM$lambda.min
           }
           if(model=="cox"){
-            glmPost <- glmnet::glmnet(X[,indAll, drop=FALSE],Y,alpha=0,
+            glmPost <- glmnet::glmnet(X[,indAll, drop=FALSE],as.matrix(Y),alpha=0,
                             lambda = lam2,family=fml,
                             offset = offset ,standardize = FALSE,
                             penalty.factor=penfctr[indAll], thresh=10^-10)
@@ -3074,9 +3082,10 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           }else if(model=='cox'){ 
             expXbPost<-exp(X %*% c(betaPost))
             h0 <- sapply(1:length(Y[,1]),function(i){Y[i,2]/sum(expXbPost[Y[,1]>=Y[i,1]])})#updated baseline hazard in censored times for left out samples
-            H0 <- sapply(Y2[,1],function(Ti){sum(h0[Y[,1]<=Ti])})
-            YpredPost <- H0*exp(X2 %*% c(betaPost))
-            MSEPost<- sum((YpredPost-Y2[,2])^2)/length(Y2[,2])
+            H0 <- sapply(sort(c(Y[,1],Y2[,1])),function(Ti){sum(h0[Y[,1]<=Ti])})
+            YpredPost <- outer(c(exp(X2 %*% betaPost)),c(H0))
+            colnames(YpredPost)<-paste("Time",signif(sort(c(Y[,1],Y2[,1]))),6)  
+            MSEPost<- NaN #sum((YpredPost-Y2[,2])^2)/length(Y2[,2])
           }
           
           output$MSEPost <- MSEPost #MSE on independent data set (if given)
@@ -3089,12 +3098,14 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
     }
     
   }
-  
   #reshape output data
   res<-list()
   size <- length(maxsel2)
   for(attr in names(output[[1]])){
-    if(attr != "whichPost"){
+    if(model=="cox" & attr=="YpredPost"){
+      res[[attr]] <- lapply(1:size,function(i) output[[i]][[attr]])
+      names(res[[attr]])<-paste("MaxSelec: ",maxsel2,sep="")
+    }else if(attr != "whichPost"){
       res[[attr]] <- try(matrix(unlist(lapply(output,function(x){x[[attr]]})),
                                 length(output[[1]][[attr]]),size),silent=TRUE)
       if(class(res[[attr]])[1]=="try-error") res[[attr]] <- NULL
