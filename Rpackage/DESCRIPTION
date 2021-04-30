@@ -21,7 +21,7 @@ Description: Fit linear, logistic and Cox survival regression models penalised w
   Various types of hyper shrinkage may be used for various co-data.
   The method accommodates inclusion of unpenalised covariates, posterior selection of covariates and multiple data types.
   The model fit is used to predict for new samples.
-  The name 'ecpc' stands for Empirical Bayes Co-data learnt Prediction and Covariate selection.
+  The name 'ecpc' stands for Empirical Bayes, Co-data learnt, Prediction and Covariate selection.
   See Van Nee et al. (2020) <arXiv:2005.04010>.
 License: GPL (>= 3)
 URL: https://arxiv.org/abs/2005.04010
