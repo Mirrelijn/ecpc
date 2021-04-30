@@ -3,7 +3,6 @@
 #The method combines empirical Bayes estimation for the group hyperparameters with an extra level of shrinkage
 #to be able to handle various co-data, including overlapping groups, hierarchical groups and continuous co-data.
 
-
 ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
                  unpen=NULL,intrcpt=TRUE,model=c("linear", "logistic", "cox"),
                  postselection="elnet,dense",maxsel=10,
