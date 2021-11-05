@@ -4,7 +4,11 @@
 #to be able to handle various co-data, including overlapping groups, hierarchical groups and continuous co-data.
 
 
-ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinkage,
+ecpc <- function(Y,X,
+                 Z=NULL,mgcv=FALSE,bam.method="ML",G=NULL,bdeg=3,orderPen=2,
+                 weightsSpline=TRUE,
+                 intrcpt.bam=TRUE,gammaForm=FALSE, #co-data with bam
+                 groupsets=NULL,groupsets.grouplvl=NULL,hypershrinkage, #co-data former
                  unpen=NULL,intrcpt=TRUE,model=c("linear", "logistic", "cox"),
                  postselection="elnet,dense",maxsel=10,
                  lambda=NULL,fold=10,sigmasq=NaN,w=NaN,
@@ -19,7 +23,7 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
   #Data and co-data:
   # Y: nx1 vector with response data
   # X: nxp matrix with observed data
-  # Zt: Gxp matrix with co-data on the p covariates 
+  # Z: pxG matrix with co-data on the p covariates 
   # groupsets: list of m elements, each element one co-data group set
   #            with each group set a list of groups containing the indices of covariates in that group 
   # groupsets.grouplvl: (optional) hierarchical groups define a group set on group level.
@@ -70,6 +74,8 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
   cont_codata <- FALSE
   if(!missing(X2)) n2<-dim(X2)[1] #number of samples in independent data set x2 if given
   multi <- FALSE; if(!is.null(datablocks)) multi <- TRUE #use multiple global tau, one for each data block
+  Zt <- NULL
+  if(!is.null(Z)) Zt <- t(Z)
    
   if(length(model)>1){
     if(all(is.element(Y,c(0,1))) || is.factor(Y)){
@@ -208,7 +214,6 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
         }
       }
     }
-    
     if(dim(Zt)[2]<p) Zt <- cbind(Zt,matrix(rep(NaN,(p-dim(Zt)[2])*sum(G)),c(sum(G),p-dim(Zt)[2])))
     PenGrps <- as.matrix(Zt[,!((1:p)%in%unpen)]%*%Matrix::t(Zt[,!((1:p)%in%unpen)])) #penalty matrix groups
   }else{
@@ -217,7 +222,33 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
     if(length(Zt)==0) stop("Provide co-data in groupsets or Zt")
     if(length(groupsets)>0) print("Continuous co-data provided, any groupsets are ignored")
     
-    G <- dim(Zt)[1]
+    if(mgcv){
+      if(length(G)==0){
+        # z <- c(Zt)
+        # bs <- "ps"
+        # smoothData <- mgcv::smooth.construct(mgcv::s(z,bs=bs),data=list(z=z),knots=NULL)
+        #splineB <- mgcv::PredictMat(smoothData,data=data.frame(z=z)) #basis function matrix
+        #G <- dim(splineB)[2]+1 #+1 for intercept
+        G <- 11
+        # splineB <- JOPS::bbase(z,nseg=G-bdeg-1,bdeg=bdeg,
+        #                  xl = min(z)-10^-6*diff(range(z)),
+        #                  xr = max(z)+10^-6*diff(range(z)))
+        # if(orderPen==0){
+        #   splineD <- diag(G-1)
+        # }else{
+        #   splineD <- diff(diag(G-1),diff=orderPen)
+        # }
+        # splineS <- t(splineD)%*%splineD
+        # if(weightsSpline){
+        #   weightsS <- apply(splineB,2,sum)
+        #   splineS <- diag(sqrt(weightsS))%*%splineS%*%diag(sqrt(weightsS))
+        # }
+      }else{
+        G <- G+1
+      }
+    }else{
+      G <- dim(Zt)[1]
+    }
     m <- 1
     if(missing(hypershrinkage)) hypershrinkage <- "none+positive"
     normalise <- FALSE
@@ -265,6 +296,7 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
   colnames(gamma)<-paste("Itr",0:nIt,sep="")
   tempRow <- unlist(lapply(1:length(G),function(x){paste("Group set",x,".G",1:G[x],sep="")}))
   rownames(muhat)<-tempRow;  rownames(gammatilde)<-tempRow;  rownames(gamma)<-tempRow
+  
   
   weightsMu <- array(NaN,c(sum(G),nIt+1))
   if(is.nan(mu)){
@@ -324,8 +356,11 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
 
   datablockNo <- rep(1,p) #in case only one data type
   if(multi!=FALSE){
-    #browser()
-    datablockNo <- c(unlist(lapply(1:length(datablocks),function(x){rep(x,length(datablocks[[x]]))}))) #p-dimensional vector with datablock number
+    if(!is.null(datablocks)){
+      datablockNo <- c(unlist(lapply(1:length(datablocks),function(x){rep(x,length(datablocks[[x]]))}))) #p-dimensional vector with datablock number
+    }else{
+      datablocks <- list(1:p)
+    }
     datablockNo[(1:p)%in%unpen]<-NA
     
     #compute multi-lambda; from multiridge package demo:
@@ -346,18 +381,23 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
       lambdas[lambdas==Inf] <- 10^6
       
       #Find joint lambdas:
-      leftout <- multiridge::CVfolds(Y=Y,kfold=fold,nrepeat=3,fixedfolds = FALSE) #Create (repeated) CV-splits of the data
-      if(sum((1:p)%in%unpen)>0){
-        jointlambdas <- multiridge::optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
-                                                   X1=X[,(1:p)%in%unpen],intercept=intrcpt,
-                                                   score=ifelse(model == "linear", "mse", "loglik"),model=model)
+      if(length(lambdas)>1){
+        leftout <- multiridge::CVfolds(Y=Y,kfold=fold,nrepeat=3,fixedfolds = FALSE) #Create (repeated) CV-splits of the data
+        if(sum((1:p)%in%unpen)>0){
+          jointlambdas <- multiridge::optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
+                                                     X1=X[,(1:p)%in%unpen],intercept=intrcpt,
+                                                     score=ifelse(model == "linear", "mse", "loglik"),model=model)
+        }else{
+          jointlambdas <- multiridge::optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
+                                                     intercept=intrcpt,
+                                                     score=ifelse(model == "linear", "mse", "loglik"),model=model)
+        }
+        
+        lambda <- jointlambdas$optpen
       }else{
-        jointlambdas <- multiridge::optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
-                                                   intercept=intrcpt,
-                                                   score=ifelse(model == "linear", "mse", "loglik"),model=model)
+        lambda <- lambdas
       }
       
-      lambda <- jointlambdas$optpen
     }else{
       if(length(lambda)==1) lambdas <- rep(lambda, max(datablockNo))
     }
@@ -509,16 +549,34 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
                #Estimate sigma^2, lambda and initial estimate for tau^2 (all betas in one group), mu=0 by default
                #NOTE, TD: not yet possible to include unpenalised covariates in MML
                if(grepl("ML",lambda)){ lambda <- NaN}
-               Xrowsum <- apply(X,1,sum)
-               
-               XXt <- X[,penfctr!=0]%*%t(X[,penfctr!=0])
-               
-               Xunpen <- cbind(X[,penfctr==0]) #if empty vector, no unpenalised and no intercept
-               if(intrcpt){
-                 Xunpen <- cbind(X[,penfctr==0],rep(1,n))
-               }
-               par <- .mlestlin(Y=Y,XXt=XXt,Xrowsum=Xrowsum,intrcpt=intrcpt,
-                                lambda=lambda,sigmasq=sigmasq,mu=mutrgt,tausq=tausq) #use maximum marginal likelihood
+               # svdX <- svd(X)
+               # if(any(svdX$d<10^-10)){
+               #   Xfull <- t(svdX$u[,svdX$d>10^-10])%*%X
+               #   Yfull <- t(svdX$u[,svdX$d>10^-10])%*%Y
+               #   Xrowsumfull <- apply(Xfull,1,sum)
+               #   
+               #   XXtfull <- Xfull[,penfctr!=0]%*%t(Xfull[,penfctr!=0])
+               #   
+               #   Xunpenfull <- cbind(Xfull[,penfctr==0]) #if empty vector, no unpenalised and no intercept
+               #   if(intrcpt){
+               #     Xunpenfull <- cbind(Xfull[,penfctr==0],rep(1,dim(Xfull)[1]))
+               #   }
+               #   par <- .mlestlin(Y=Yfull,XXt=XXtfull,Xrowsum=Xrowsumfull,intrcpt=intrcpt,
+               #                    lambda=lambda,sigmasq=sigmasq,mu=mutrgt,tausq=tausq) #use maximum marginal likelihood
+               #   
+               # }else{
+                 Xrowsum <- apply(X,1,sum)
+                 
+                 XXt <- X[,penfctr!=0]%*%t(X[,penfctr!=0])
+                 
+                 Xunpen <- cbind(X[,penfctr==0]) #if empty vector, no unpenalised and no intercept
+                 if(sum(penfctr==0)>0){
+                   Xunpen <- X[,penfctr==0]
+                 }
+                 par <- .mlestlin(Y=Y,XXt=XXt,Xrowsum=Xrowsum,
+                                  intrcpt=FALSE,Xunpen=NULL, #TD: adapt for intercept and Xunpen
+                                  lambda=lambda,sigmasq=sigmasq,mu=mutrgt,tausq=tausq) #use maximum marginal likelihood
+               #}
                
                lambda <- par[1] 
                sigmahat <- par[2] #sigma could be optimised with CV in the end if not known
@@ -535,8 +593,12 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
              lambdap <- rep(lambda,p) #px1 vector with penalty for each beta_k, k=1,..,p
              lambdap[(1:p)%in%unpen] <- 0
              
-             muinitp <- as.vector(c(muhat[,1])%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p (0 for unpenalised covariates) 
-             muinitp[(1:p)%in%unpen] <- 0
+             if(mgcv){ 
+               muinitp <- rep(0,p)
+             }else{
+               muinitp <- as.vector(c(muhat[,1])%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p (0 for unpenalised covariates) 
+               muinitp[(1:p)%in%unpen] <- 0
+             }
              glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
                                  lambda = lambda/n*sd_y,family=fml,
                                  offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], 
@@ -655,8 +717,12 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
              lambdap <- rep(lambda,p) #px1 vector with penalty for each beta_k, k=1,..,p
              lambdap[(1:p)%in%unpen] <- 0
              
-             muinitp<- as.vector(c(muhat[,1])%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p 
-             muinitp[(1:p)%in%unpen] <- 0
+             if(mgcv){ 
+               muinitp <- rep(0,p)
+             }else{
+               muinitp <- as.vector(c(muhat[,1])%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p (0 for unpenalised covariates) 
+               muinitp[(1:p)%in%unpen] <- 0
+             }
              glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
                                  lambda = lambda/n*sd_y,family=fml,
                                  offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], intercept = intrcpt, standardize = FALSE,
@@ -731,8 +797,12 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
              #initial estimate for beta
              lambdap <- rep(lambda,p) #px1 vector with penalty for each beta_k, k=1,..,p
              lambdap[(1:p)%in%unpen] <- 0
-             muinitp<- as.vector(c(muhat[,1])%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p
-             muinitp[(1:p)%in%unpen] <- 0
+             if(mgcv){ 
+               muinitp <- rep(0,p)
+             }else{
+               muinitp <- as.vector(c(muhat[,1])%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p (0 for unpenalised covariates) 
+               muinitp[(1:p)%in%unpen] <- 0
+             }
              glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
                                  lambda = 2*lambda/n*sd_y,family=fml,
                                  offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], standardize = FALSE,
@@ -815,7 +885,9 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
       
       svdX<-svd(Xpen) #X=UDV^T=RV^T
       svdXR<-svdX$u%*%diag(svdX$d) #R=UD
-      L2<-as.matrix(Matrix::sparseMatrix(i=1:length(pen),j=1:length(pen),x=Matrix::diag(Deltac)[pen]^(-0.5))%*%svdX$v%*%solve(t(svdXR)%*%svdXR+diag(1,n),t(svdXR)%*%t(CP1)))
+      L2 <- as.matrix(Matrix::sparseMatrix(i=1:length(pen),j=1:length(pen),
+                 x=Matrix::diag(Deltac)[pen]^(-0.5))%*%svdX$v%*%solve(t(svdXR)%*%
+                                                    svdXR+diag(1,n),t(svdXR)%*%t(CP1)))
       L<-array(0,c(p+intrcpt,n))
       L[pen,]<-L2 #compute only elements corresponding to penalised covariates
       
@@ -830,6 +902,7 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
       # XtXD <- t(Xc)%*%Xc+Deltac
       # XtXDinv <- solve(XtXD) #inverting pxp matrix really slow, use SVD instead
       # L1<-XtXDinv %*% t(Xc)
+      # L1 <- solve(XtXD,t(Xc))
       # R<-Xc
       # V1<-sigmahat*apply(L,1,function(x){sum(x^2)})
       # #same as: V <- sigmahat*diag(L%*%R %*% XtXDinv) 
@@ -913,7 +986,12 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
       
       #extract parts of global variables for local copy
       if(length(Partitions)<m | m==1){
-        Zt <- Zt[unlist(indGrpsGlobal[Partitions]),,drop=FALSE]
+        if(mgcv){
+          Zt <- Zt
+        }else{
+          Zt <- Zt[unlist(indGrpsGlobal[Partitions]),,drop=FALSE]
+        }
+        
         if(missing(pars)){
           ind0 <- which(unlist(indGrpsGlobal[Partitions])%in%ind0)
           indnot0 <- which(unlist(indGrpsGlobal[Partitions])%in%indnot0)
@@ -1969,6 +2047,7 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
         lambdashat <- c(0,0) 
         
         #-3.3.3|2.1 EB estimate group means ============================================================
+        
         muhatp <-as.vector(rep(mu,sum(G))%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p
         muhatp[(1:p)%in%unpen] <- 0
         weightsMu <- rep(NaN,sum(G))
@@ -2070,11 +2149,183 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
               })
             ),c(sum(G),sum(G)),byrow=TRUE) #reshape to matrix of size sum(G)xsum(G)
           }else{
+            if(mgcv){
+              x<-pen
+              x<-setdiff(x,zeroV)
+              z <- Zt[,x]
+              bs <- "ps"
+              smoothData <- mgcv::smooth.construct(mgcv::s(z,bs=bs,k=G-1,m=1),data=list(z=z),knots=NULL)
+              # splineB <- mgcv::PredictMat(smoothData,data=data.frame(z=z)) #basis function matrix
+              # splineS <- smoothData$S[[1]]
+              
+              splineB <- JOPS::bbase(z,nseg=G-bdeg-1,bdeg=bdeg,
+                               xl = min(z)-10^-6*diff(range(z)),
+                               xr = max(z)+10^-6*diff(range(z)))
+              if(orderPen==0){
+                splineD <- diag(G-1)
+              }else{
+                splineD <- diff(diag(G-1),diff=orderPen)
+              }
+              splineS <- t(splineD)%*%splineD
+              
+              if(weightsSpline){
+                weightsS <- apply(splineB,2,sum)
+                splineS <- diag(sqrt(weightsS))%*%splineS%*%diag(sqrt(weightsS))
+              }
+              #U <- C%*%splineB
+              
+              Btau <- ((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1)
+              #Btau <- pmax(0,((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1))
+              A <- as.matrix(((L[x,]%*%R[,x])^2/c(V[x]))%*%splineB*c(tauglobal[datablockNo[x]]))
+              #browser()
+              #fit bam on U directly with penalty matrix splineS
+              if(intrcpt.bam){
+                Aintrcpt <- as.matrix(((L[pen,]%*%R[,pen])^2/c(V[pen]))%*%rep(1,length(pen))*c(tauglobal[datablockNo[x]]))
+                
+                #additional ridge penalty
+                if(hypershrinkage=="none.ridge"){
+                  fit2 <- mgcv::bam( Btau ~ -1 + Aintrcpt + A, data=list(Btau=Btau,A=A,Aintrcpt=Aintrcpt), 
+                                     paraPen = list(A=list(S1=splineS,S2=diag(1,dim(A)[2]))),
+                                     method=bam.method) #can include ridge penalty if desired (with list(splineS, DeltaRidge))
+                  gamma <- fit2$coefficients
+                }else if(hypershrinkage=="none.positive"){
+                  browser()
+                  lam <- 10^1
+                  Bext <- c(Btau,rep(0,dim(A)[2]))
+                  Aext <- rbind(cbind(Aintrcpt,A), cbind(rep(0,dim(A)[2]), lam*splineS))
+                  fit2 <- nnls::nnls(Aext,Bext)
+                  gamma <- as.vector(fit2$x)
+                }else if(hypershrinkage=="none.mi"){
+                  lam <- 10^-5
+                  Sigma.mi <- diag(rep(1,dim(A)[2]))
+                  Sigma.mi[lower.tri(Sigma.mi)] <- 1
+                  Bext <- c(Btau,rep(0,dim(A)[2]))
+                  Aext <- rbind(cbind(Aintrcpt,A%*%Sigma.mi), 
+                                cbind(rep(0,dim(A)[2]), 
+                                      lam*t(Sigma.mi)%*%splineS%*%Sigma.mi))
+                  fit2 <- nnls::nnls(Aext,Bext)
+                  gamma <- c(fit2$x[1], Sigma.mi%*%as.vector(fit2$x[-1]))
+                }else if(hypershrinkage=="none.mi"){
+                  lam <- 10^-5
+                  Sigma.mi <- diag(rep(1,dim(A)[2]))
+                  Sigma.mi[upper.tri(Sigma.mi)] <- 1
+                  Bext <- c(Btau,rep(0,dim(A)[2]))
+                  Aext <- rbind(cbind(Aintrcpt,A%*%Sigma.mi), 
+                                cbind(rep(0,dim(A)[2]), 
+                                      lam*t(Sigma.mi)%*%splineS%*%Sigma.mi))
+                  fit2 <- nnls::nnls(Aext,Bext)
+                  gamma <- c(fit2$x[1], Sigma.mi%*%as.vector(fit2$x[-1]))
+                }else{
+                  fit2 <- mgcv::bam( Btau ~ -1 + Aintrcpt + A, data=list(Btau=Btau,A=A,Aintrcpt=Aintrcpt), 
+                                     paraPen = list(A=list(S1=splineS)),
+                                     method=bam.method) #can include ridge penalty if desired (with list(splineS, DeltaRidge))
+                  gamma <- fit2$coefficients
+                  
+                  # #try least absolute deviation 
+                  # lam <- 10^12
+                  # Btauplus <- c(Btau,rep(0,dim(splineS)[1]))
+                  # Aplus <- rbind(cbind(Aintrcpt,A),cbind(rep(0,dim(splineS)[1]),lam*splineS))
+                  # qfit <- rq(Btauplus ~ Aplus - 1)
+                  # a <- coefficients(qfit)
+                  # plot(z,splineB%*%a[-1]+a[1])
+                }
+                
+                
+                #gamma formulation
+                if(gammaForm){
+                  Btau2 <- ((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x])
+                  
+                  fit2 <- mgcv::bam( Btau2 ~ -1 + Aintrcpt + A, data=list(Btau2=Btau2,A=A,Aintrcpt=Aintrcpt), 
+                                     paraPen = list(A=list(S1=splineS)),
+                                     method=bam.method,family = Gamma(link="identity"),
+                                     offset=rep(1,length(Btau2))) 
+                  gamma <- fit2$coefficients
+                }
+                
+              }else{
+                if(hypershrinkage=="none.positive"){
+                  lam <- 10^3
+                  Bext <- c(Btau,rep(0,dim(A)[2]))
+                  Aext <- rbind(A, lam*splineS)
+                  fit2 <- nnls::nnls(Aext,Bext)
+                  gamma <- rep(0,G)
+                  gamma[-1] <- as.vector(fit2$x)
+                }else if(hypershrinkage=="none.mi"){ #monotone increasing
+                  lam <- 10^-5
+                  Sigma.mi <- diag(rep(1,dim(A)[2]))
+                  Sigma.mi[lower.tri(Sigma.mi)] <- 1
+                  Bext <- c(Btau,rep(0,dim(A)[2]))
+                  Aext <- rbind(A%*%Sigma.mi, 
+                                lam*t(Sigma.mi)%*%splineS%*%Sigma.mi)
+                  fit2 <- nnls::nnls(Aext,Bext)
+                  gamma <- rep(0,G)
+                  gamma[-1] <- Sigma.mi%*%as.vector(fit2$x)
+                }else if(hypershrinkage=="none.md"){ #monotone decreasing
+                  lam <- 10^-5
+                  Sigma.mi <- diag(rep(1,dim(A)[2]))
+                  Sigma.mi[upper.tri(Sigma.mi)] <- 1
+                  Bext <- c(Btau,rep(0,dim(A)[2]))
+                  Aext <- rbind(A%*%Sigma.mi, 
+                                lam*t(Sigma.mi)%*%splineS%*%Sigma.mi)
+                  fit2 <- nnls::nnls(Aext,Bext)
+                  gamma <- rep(0,G)
+                  gamma[-1] <- Sigma.mi%*%as.vector(fit2$x)
+                }else{
+                  fit2 <- mgcv::bam( Btau ~ -1+A, data=list(Btau=Btau,A=A), 
+                                     paraPen = list(A=list(S1=splineS)),
+                                     method=bam.method) #can include ridge penalty if desired (with list(splineS, DeltaRidge))
+                  gamma <- rep(0,G)
+                  gamma[-1] <- fit2$coefficients
+                }
+                
+                
+                #gamma formulation
+                if(gammaForm){
+                  Btau2 <- ((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x])
+                  
+                  fit2 <- mgcv::bam( Btau2 ~ -1+A, data=list(Btau2=Btau2,A=A), 
+                                     paraPen = list(A=list(S1=splineS)),
+                                     method=bam.method,family = Gamma(link="identity"),
+                                     offset=rep(1,length(Btau2))) 
+                  gamma <- rep(0,G)
+                  gamma[-1] <- fit2$coefficients
+                }
+                
+              }
+              
+              
+              lambdashat <- fit2$sp
+              gammatilde <- gamma
+              
+              if(class(fit2)[1]=="nnls"){
+                plot(fit2$fitted[1:p],Btau)
+                abline(0,1)
+                hist((fit2$fitted[1:p]-Btau))
+              }else{
+                plot(fit2$fitted.values,Btau)
+                abline(0,1)
+                hist((fit2$fitted.values-Btau))
+              }
+              
+              plot(z,splineB%*%gamma[-1]+gamma[1])
+              #browser()
+              return(list(
+                lambdashat=lambdashat,
+                muhat=muhat,
+                gamma=gamma,
+                gammatilde=gammatilde,
+                hypershrinkage=hypershrinkage,
+                weightsMu=weightsMu
+              ))
+            }
             x<-pen
             x<-setdiff(x,zeroV)
             Btau <- ((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1)
             #Btau <- pmax(0,((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1))
             A <- as.matrix(((L[x,]%*%R[,x])^2/c(V[x]))%*%t(Zt[,x,drop=FALSE])*c(tauglobal[datablockNo[x]]))
+            
+            
+            
           }
           if(any(is.nan(fixWeightsTau))){
             if(!cont_codata){
@@ -2264,7 +2515,7 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
       }
     }
     )
-
+    
     #global update group parameters
     muhat[,Itr+1]<-unlist(lapply(MoMGroupRes,function(prt){prt$muhat}))
     gammatilde[,Itr+1] <- unlist(lapply(MoMGroupRes,function(prt){prt$gammatilde}))
@@ -2337,9 +2588,39 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
             lambdap<-sigmahat/(tauglobal[datablockNo]*as.vector(c(partWeightsTauG[,Itr+1]*gamma[,Itr+1])%*%Zt)) #specific penalty for beta_k
             lambdap[lambdap<0]<-Inf 
           }else{
-            taup<-tauglobal[datablockNo]*as.vector(c(partWeightsTauG[,Itr+1]*gammatilde[,Itr+1])%*%Zt)
-            lambdap<-sigmahat/(tauglobal[datablockNo]*as.vector(c(partWeightsTauG[,Itr+1]*gammatilde[,Itr+1])%*%Zt)) #specific penalty for beta_k
-            lambdap[lambdap<0]<-Inf 
+            if(mgcv){
+              #browser()
+              x<-pen
+              x<-setdiff(x,zeroV)
+              z <- Zt[,x]
+              bs <- "ps"
+              smoothData <- mgcv::smooth.construct(mgcv::s(z,bs=bs,k=G-1),data=list(z=z),knots=NULL)
+              
+              #splineB <- mgcv::PredictMat(smoothData,data=data.frame(z=z)) #basis function matrix
+              splineB <- JOPS::bbase(z,nseg=G-bdeg-1,bdeg=bdeg,
+                               xl = min(z)-10^-6*diff(range(z)),
+                               xr = max(z)+10^-6*diff(range(z)))
+              if(orderPen==0){
+                splineD <- diag(G-1)
+              }else{
+                splineD <- diff(diag(G-1),diff=orderPen)
+              }
+              splineS <- t(splineD)%*%splineD
+              if(weightsSpline){
+                weightsS <- apply(splineB,2,sum)
+                splineS <- diag(sqrt(weightsS))%*%splineS%*%diag(sqrt(weightsS))
+              }
+              
+              taup<-tauglobal[datablockNo]*as.vector(c(partWeightsTauG[-1,Itr+1]*gammatilde[-1,Itr+1])%*%t(splineB)+ 
+                                                     partWeightsTauG[1,Itr+1] * gammatilde[1,Itr+1])
+              lambdap<-sigmahat/taup
+              lambdap[lambdap<0]<-Inf 
+            }else{
+              taup<-tauglobal[datablockNo]*as.vector(c(partWeightsTauG[,Itr+1]*gammatilde[,Itr+1])%*%Zt)
+              lambdap<-sigmahat/(tauglobal[datablockNo]*as.vector(c(partWeightsTauG[,Itr+1]*gammatilde[,Itr+1])%*%Zt)) #specific penalty for beta_k
+              lambdap[lambdap<0]<-Inf 
+            }
+            
           }
           
         } 
@@ -2353,22 +2634,18 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
   
     #-3.3.5 Update beta using glmnet #######################################################################
     if(!silent) print("Estimate regression coefficients")
-    
-    if(all(gamma[,Itr+1]==0)){
-      if(!all(muhatp==0)){
-        beta <- muhatp
-        if(intrcpt){
-          if(model=="linear"){
-            glmGR <- list(a0=sum(Y-X%*%beta)/n)
-          }else if(model=='logistic'){
-            glmGR <- list(a0=sum(Y-exp(X%*%beta)/(1+exp(X%*%beta)))/n) 
-          }
-        }else{
-          glmGR <- list(a0=0)
+    if(all(gamma[,Itr+1]==0) | all(lambdap==Inf)){
+      beta <- muhatp
+      if(intrcpt){
+        if(model=="linear"){
+          glmGR <- list(a0=sum(Y-X%*%beta)/n)
+        }else if(model=='logistic'){
+          glmGR <- list(a0=sum(Y-exp(X%*%beta)/(1+exp(X%*%beta)))/n) 
         }
-        warning("All tau (set to) 0")
-    }
-      
+      }else{
+        glmGR <- list(a0=0)
+      }
+      warning("All regression coefficients (set to) 0 due too large penalties")
     }else{
       if(model=="linear"){
         sd_y2 <- sqrt(var(Y-X %*% muhatp)*(n-1)/n)[1]
@@ -2517,6 +2794,13 @@ ecpc <- function(Y,X,Zt=NULL,groupsets=NULL,groupsets.grouplvl=NULL,hypershrinka
     #levelsY = levelsY, #in case of logistic
     sigmahat=sigmahat #estimated sigma^2 (linear model)
   )
+  if(mgcv){
+    output$mgcv <- list()
+    output$mgcv$splineB <- splineB
+    output$mgcv$splineS <- splineS
+    output$mgcv$Z <- t(Zt)
+    output$mgcv$smoothData <- smoothData 
+  }
   if(nIt>1){
     output$gamma <- gamma[,-1]
     output$gammatilde <- gammatilde[,-1]
@@ -3351,10 +3635,10 @@ createGroupset <- function(values,index=NULL,grsize=NULL,ngroup=10,
 
 
 #Estimate maximum marginal likelihood estimates for linear model----
-.mlestlin <- function(Y,XXt,Xrowsum,lambda=NaN,sigmasq=NaN,mu=NaN,tausq=NaN,intrcpt=TRUE){
+.mlestlin <- function(Y,XXt,Xrowsum,Xunpen=NULL,lambda=NaN,sigmasq=NaN,mu=NaN,tausq=NaN,intrcpt=TRUE){
   #lambda,sigmasq,mu are possibly fixed
   maxv <- var(Y)
-  if(intrcpt) Y <- Y - mean(Y)
+  #if(intrcpt) Y <- Y - mean(Y)
   
   #p<-dim(X)[2]
   n<-length(Y)
