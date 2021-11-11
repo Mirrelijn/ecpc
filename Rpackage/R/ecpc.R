@@ -3,7 +3,9 @@
 #The method combines empirical Bayes estimation for the group hyperparameters with an extra level of shrinkage
 #to be able to handle various co-data, including overlapping groups, hierarchical groups and continuous co-data.
 
-ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
+ecpc <- function(Y,X,
+                 Z=NULL,intrcpt.bam=TRUE,paraPen=NULL,bam.method="ML",
+                 groupsets=NULL,groupsets.grouplvl=NULL,hypershrinkage=NULL, #co-data former
                  unpen=NULL,intrcpt=TRUE,model=c("linear", "logistic", "cox"),
                  postselection="elnet,dense",maxsel=10,
                  lambda=NULL,fold=10,sigmasq=NaN,w=NaN,
@@ -18,6 +20,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
   #Data and co-data:
   # Y: nx1 vector with response data
   # X: nxp matrix with observed data
+  # Z: pxG matrix with co-data on the p covariates 
   # groupsets: list of m elements, each element one co-data group set
   #            with each group set a list of groups containing the indices of covariates in that group 
   # groupsets.grouplvl: (optional) hierarchical groups define a group set on group level.
@@ -62,11 +65,21 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
 
   nIt=1;
   betaold=NaN
+  gammaForm=FALSE #co-data with bam
   #-2. Set-up variables ---------------------------------------------------------------------------
   n <- dim(X)[1] #number of samples
   p <- dim(X)[2] #number of covariates 
+  
   if(!missing(X2)) n2<-dim(X2)[1] #number of samples in independent data set x2 if given
   multi <- FALSE; if(!is.null(datablocks)) multi <- TRUE #use multiple global tau, one for each data block
+  
+  if(!is.null(Z)&!is.null(groupsets)){
+    stop("Provide co-data either in Z or in groupsets, both not possible")
+  }else if(is.null(Z)&is.null(groupsets)){
+    print("No co-data provided. Regular ridge is computed corresponding to an intercept only co-data model.")
+    groupsets <- list(list(1:p))
+  }
+  cont_codata <- FALSE; if(!is.null(Z)) cont_codata <- TRUE
    
   if(length(model)>1){
     if(all(is.element(Y,c(0,1))) || is.factor(Y)){
@@ -133,7 +146,15 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
          }
   )
   mutrgt<-0
-  if(mu==FALSE){mu <- 0}else mu <- NaN
+  if(mu==FALSE){mu <- 0}else{
+    if(cont_codata){
+      warning("Co-data provided in Z instead of groupsets. This option does not 
+               yet support inclusion of prior means. Prior means set to 0.")
+      mu <- 0 
+    }else{
+      mu <- NaN
+    }
+  } 
   tauglobal<-NaN
   tausq<-NaN
   hyperlambdas<-c(NaN,NaN)
@@ -143,70 +164,112 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
   penfctr <- rep(1,p) #factor=1 for penalised covariates
   if(length(unpen)>0){
     penfctr[unpen] <- 0 #factor=0 for unpenalised covariates
-    if(any(unlist(groupsets)%in%unpen)){
-      warning("Unpenalised covariates removed from group set")
-      for(i in 1:length(groupsets)){
-        for(j in 1:length(groupsets[[i]])){
-          if(all(groupsets[[i]][[j]]%in%unpen)){
-            groupsets[[i]][[j]] <- NULL #remove whole group if all covariates unpenalised
-          }else{
-            groupsets[[i]][[j]] <- groupsets[[i]][[j]][!(groupsets[[i]][[j]]%in%unpen)]
+  }
+  
+  #-2.1 Variables describing groups and partition(s) =================================================
+  if(!cont_codata){ #settings when co-data is provided in groupsets
+    #remove any unpenalised covariates from group sets
+    if(length(unpen)>0){
+      if(any(unlist(groupsets)%in%unpen)){
+        warning("Unpenalised covariates removed from group set")
+        for(i in 1:length(groupsets)){
+          for(j in 1:length(groupsets[[i]])){
+            if(all(groupsets[[i]][[j]]%in%unpen)){
+              groupsets[[i]][[j]] <- NULL #remove whole group if all covariates unpenalised
+            }else{
+              groupsets[[i]][[j]] <- groupsets[[i]][[j]][!(groupsets[[i]][[j]]%in%unpen)]
+            }
           }
         }
       }
     }
-  }
-  
-  #-2.1 Variables describing groups and partition(s) =================================================
-  G <- sapply(groupsets,length) #1xm vector with G_i, number of groups in partition i
-  m <- length(G) #number of partitions
-  if(missing(hypershrinkage)){
-    hypershrinkage<-rep("ridge",m)
-  }
-  if(any(grepl("hierLasso",hypershrinkage))){
-    if(length(groupsets.grouplvl)==0){
-      stop("Group set on group level for hierarchical groups is missing")
+    
+    G <- sapply(groupsets,length) #1xm vector with G_i, number of groups in partition i
+    m <- length(G) #number of partitions
+    if(is.null(hypershrinkage)){
+      hypershrinkage<-rep("ridge",m)
     }
-    if(!is.list(groupsets.grouplvl) | length(groupsets.grouplvl)!=m){
-      stop("Group sets on group level should be a nested list")
-    }
-  }
-  indGrpsGlobal <- list(1:G[1]) #global group index in case we have multiple partitions
-  if(m>1){
-    for(i in 2:m){
-      indGrpsGlobal[[i]] <- (sum(G[1:(i-1)])+1):sum(G[1:i])
-    }
-  }
-  Kg <- lapply(groupsets,function(x)(sapply(x,length))) #m-list with G_i vector of group sizes in partition i
-  #ind1<-ind
-  
-  #ind <- (matrix(1,G,1)%*%ind)==(1:G)#sparse matrix with ij element TRUE if jth element in group i, otherwise FALSE
-  i<-unlist(sapply(1:sum(G),function(x){rep(x,unlist(Kg)[x])}))
-  j<-unlist(unlist(groupsets))
-  ind <- Matrix::sparseMatrix(i,j,x=1) #sparse matrix with ij element 1 if jth element in group i (global index), otherwise 0
-  
-  Ik <- lapply(1:m,function(i){
-    x<-rep(0,sum(G))
-    x[(sum(G[1:i-1])+1):sum(G[1:i])]<-1
-    as.vector(x%*%ind)}) #list for each partition with px1 vector with number of groups beta_k is in
-  #sparse matrix with ij element 1/Ij if beta_j in group i
-  
-  #make co-data matrix Z (Zt transpose of Z as in paper, with co-data matrices stacked for multiple groupsets)
-  Zt<-ind; 
-  if(G[1]>1){
-    Zt[1:G[1],]<-Matrix::t(Matrix::t(ind[1:G[1],])/apply(ind[1:G[1],],2,sum))
-  }
-  if(m>1){
-    for(i in 2:m){
-      if(G[i]>1){
-        Zt[indGrpsGlobal[[i]],]<-Matrix::t(Matrix::t(ind[indGrpsGlobal[[i]],])/
-                                                     apply(ind[indGrpsGlobal[[i]],],2,sum))
+    if(any(grepl("hierLasso",hypershrinkage))){
+      if(length(groupsets.grouplvl)==0){
+        stop("Group set on group level for hierarchical groups is missing")
+      }
+      if(!is.list(groupsets.grouplvl) | length(groupsets.grouplvl)!=m){
+        stop("Group sets on group level should be a nested list")
       }
     }
-  }
-
-  if(dim(Zt)[2]<p) Zt <- cbind(Zt,matrix(rep(NaN,(p-dim(Zt)[2])*sum(G)),c(sum(G),p-dim(Zt)[2])))
-  PenGrps <- as.matrix(Zt[,!((1:p)%in%unpen)]%*%Matrix::t(Zt[,!((1:p)%in%unpen)])) #penalty matrix groups
+    indGrpsGlobal <- list(1:G[1]) #global group index in case we have multiple partitions
+    if(m>1){
+      for(i in 2:m){
+        indGrpsGlobal[[i]] <- (sum(G[1:(i-1)])+1):sum(G[1:i])
+      }
+    }
+    Kg <- lapply(groupsets,function(x)(sapply(x,length))) #m-list with G_i vector of group sizes in partition i
+    #ind1<-ind
+    
+    #ind <- (matrix(1,G,1)%*%ind)==(1:G)#sparse matrix with ij element TRUE if jth element in group i, otherwise FALSE
+    i<-unlist(sapply(1:sum(G),function(x){rep(x,unlist(Kg)[x])}))
+    j<-unlist(unlist(groupsets))
+    ind <- Matrix::sparseMatrix(i,j,x=1) #sparse matrix with ij element 1 if jth element in group i (global index), otherwise 0
+    
+    Ik <- lapply(1:m,function(i){
+      x<-rep(0,sum(G))
+      x[(sum(G[1:i-1])+1):sum(G[1:i])]<-1
+      as.vector(x%*%ind)}) #list for each partition with px1 vector with number of groups beta_k is in
+    #sparse matrix with ij element 1/Ij if beta_j in group i
+    
+    #make co-data matrix Z (Zt transpose of Z as in paper, with co-data matrices stacked for multiple groupsets)
+    Zt<-ind; 
+    if(G[1]>1){
+      Zt[1:G[1],]<-Matrix::t(Matrix::t(ind[1:G[1],])/apply(ind[1:G[1],],2,sum))
+    }
+    if(m>1){
+      for(i in 2:m){
+        if(G[i]>1){
+          Zt[indGrpsGlobal[[i]],]<-Matrix::t(Matrix::t(ind[indGrpsGlobal[[i]],])/
+                                               apply(ind[indGrpsGlobal[[i]],],2,sum))
+        }
+      }
+    }
+    if(dim(Zt)[2]<p) Zt <- cbind(Zt,matrix(rep(NaN,(p-dim(Zt)[2])*sum(G)),c(sum(G),p-dim(Zt)[2])))
+    PenGrps <- as.matrix(Zt[,!((1:p)%in%unpen)]%*%Matrix::t(Zt[,!((1:p)%in%unpen)])) #penalty matrix groups
+  }else{ #settings when co-data is provided in list Z
+    if(!is.list(Z)) stop("Provide co-data Z as a list of co-data matrices")
+    m <- length(Z)
+    names(Z) <- paste("Z",1:m,sep="")
+    for(i in 1:m){
+      if(is.vector(Z[[i]])) Z[[i]] <- matrix(Z[[i]],length(Z[[i]]),1)
+      if(dim(Z[[i]])[1]!=p) stop("Co-data matrix should contain p-dimensional columns, 
+                                 with p the number of penalised and possibly unpenalised
+                                 variables given in X. Any co-data values for unpenalised 
+                                 variables may be given as those are ignored.") 
+      if(length(unpen)>0) Z[[i]][unpen,] <- NaN
+    }
+    G <- sapply(Z,function(x)dim(x)[2]) #1xm vector with G_i, number of variables in co-data source i
+    
+    indGrpsGlobal <- list(1:G[1]) #global group index in case we have multiple partitions
+    if(m>1){
+      for(i in 2:m){
+        indGrpsGlobal[[i]] <- (sum(G[1:(i-1)])+1):sum(G[1:i])
+      }
+    }
+    #stack transposed co-data matrices in one matrix
+    Zt <- t(Z[[1]])
+    for(i in 2:m){
+      Zt <- rbind(Zt,t(Z[[i]]))
+    }
+    Kg <- list(apply(Zt,1,function(x)(sum(!is.na(x))))) #m-list with G_i vector of group sizes in partition i
+    
+    if(is.null(hypershrinkage)) hypershrinkage <- "mgcv"
+    if(!(hypershrinkage%in%c("mgcv","none.positive","none.mi","none.md"))){
+      stop("For co-data provided in Z matrix, hypershrinkage should be one of
+           mgcv, none.positive,none.mi or none.md")
+    }
+    normalise <- FALSE
+    
+    Ik <- lapply(1:m,function(x) rep(1,p))
+    PenGrps <- as.matrix(Zt[,!((1:p)%in%unpen)]%*%Matrix::t(Zt[,!((1:p)%in%unpen)])) #penalty matrix groups
+  } 
+  
 
   #-2.2 Weight variables for extra shrinkage on group parameters =====================================
   # Compute weights and corresponding weight matrix
@@ -237,11 +300,14 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
   muhat <- array(mu,c(sum(G),nIt+1)); #group means, optional: fixed at mu if given
   gammatilde <- array(tausq,c(sum(G),nIt+1)) #group variances before truncating negative tau to 0, optional: fixed at tausq if given (tausq 1 value for all groups)
   gamma <- array(max(0,tausq),c(sum(G),nIt+1)) #group variances truncated at 0 for negative values, optional: fixed at tausq if given
+  gamma0 <- 0
+  gamma0tilde <- 0
   colnames(muhat)<-paste("Itr",0:nIt,sep="")
   colnames(gammatilde)<-paste("Itr",0:nIt,sep="")
   colnames(gamma)<-paste("Itr",0:nIt,sep="")
   tempRow <- unlist(lapply(1:length(G),function(x){paste("Group set",x,".G",1:G[x],sep="")}))
   rownames(muhat)<-tempRow;  rownames(gammatilde)<-tempRow;  rownames(gamma)<-tempRow
+  
   
   weightsMu <- array(NaN,c(sum(G),nIt+1))
   if(is.nan(mu)){
@@ -301,8 +367,11 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
 
   datablockNo <- rep(1,p) #in case only one data type
   if(multi!=FALSE){
-    #browser()
-    datablockNo <- c(unlist(lapply(1:length(datablocks),function(x){rep(x,length(datablocks[[x]]))}))) #p-dimensional vector with datablock number
+    if(!is.null(datablocks)){
+      datablockNo <- c(unlist(lapply(1:length(datablocks),function(x){rep(x,length(datablocks[[x]]))}))) #p-dimensional vector with datablock number
+    }else{
+      datablocks <- list(1:p)
+    }
     datablockNo[(1:p)%in%unpen]<-NA
     
     #compute multi-lambda; from multiridge package demo:
@@ -311,29 +380,39 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
     XXbl <- multiridge::createXXblocks(lapply(datablocks,function(ind) X[,intersect(ind,ind[!(ind%in%unpen)])]))
     
     #Find initial lambda: fast CV per data block, separately using SVD. CV is done using the penalized package
-    if(sum((1:p)%in%unpen)>0){
-      capture.output({cvperblock <- multiridge::fastCV2(Xbl,Y=Y,kfold=fold,fixedfolds = FALSE,
-                                        X1=X[,(1:p)%in%unpen],intercept=intrcpt)})
-    }else{
-      capture.output({cvperblock <- multiridge::fastCV2(Xbl,Y=Y,kfold=fold,fixedfolds = FALSE,
-                                        intercept=intrcpt)})
-    }
-    lambdas <- cvperblock$lambdas
-    lambdas[lambdas==Inf] <- 10^6
-    
-    #Find joint lambdas:
-    leftout <- multiridge::CVfolds(Y=Y,kfold=fold,nrepeat=3,fixedfolds = FALSE) #Create (repeated) CV-splits of the data
-    if(sum((1:p)%in%unpen)>0){
-      capture.output({jointlambdas <- multiridge::optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
+    if(!is.numeric(lambda)){
+      if(sum((1:p)%in%unpen)>0){
+        capture.output({cvperblock <- multiridge::fastCV2(Xbl,Y=Y,kfold=fold,fixedfolds = FALSE,
+                                                          X1=X[,(1:p)%in%unpen],intercept=intrcpt)})
+      }else{
+        capture.output({cvperblock <- multiridge::fastCV2(Xbl,Y=Y,kfold=fold,fixedfolds = FALSE,
+                                                          intercept=intrcpt)})
+      }
+      lambdas <- cvperblock$lambdas
+      lambdas[lambdas==Inf] <- 10^6
+      
+      #Find joint lambdas:
+      if(length(lambdas)>1){
+        leftout <- multiridge::CVfolds(Y=Y,kfold=fold,nrepeat=3,fixedfolds = FALSE) #Create (repeated) CV-splits of the data
+        if(sum((1:p)%in%unpen)>0){
+          capture.output({jointlambdas <- multiridge::optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
                                      X1=X[,(1:p)%in%unpen],intercept=intrcpt,
                                      score=ifelse(model == "linear", "mse", "loglik"),model=model)})
-    }else{
-      capture.output({jointlambdas <- multiridge::optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
+        }else{
+          capture.output({jointlambdas <- multiridge::optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
                                      intercept=intrcpt,
                                      score=ifelse(model == "linear", "mse", "loglik"),model=model)})
+        }
+        
+        lambda <- jointlambdas$optpen
+      }else{
+        lambda <- lambdas
+      }
+      
+    }else{
+      if(length(lambda)==1) lambdas <- rep(lambda, max(datablockNo))
     }
     
-    lambda <- jointlambdas$optpen
     lambdap <- rep(0,p)
     lambdap[!((1:p)%in%unpen)] <- lambda[datablockNo[!((1:p)%in%unpen)]]
 
@@ -493,6 +572,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
                par <- .mlestlin(Y=Y,XXt=XXt,Xrowsum=Xrowsum,
                                 intrcpt=FALSE,Xunpen=NULL, #TD: adapt for intercept and Xunpen
                                 lambda=lambda,sigmasq=sigmasq,mu=mutrgt,tausq=tausq) #use maximum marginal likelihood
+
                lambda <- par[1] 
                sigmahat <- par[2] #sigma could be optimised with CV in the end if not known
                muhat[,1] <- par[3] 
@@ -508,8 +588,12 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
              lambdap <- rep(lambda,p) #px1 vector with penalty for each beta_k, k=1,..,p
              lambdap[(1:p)%in%unpen] <- 0
              
-             muinitp <- as.vector(c(muhat[,1])%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p (0 for unpenalised covariates) 
-             muinitp[(1:p)%in%unpen] <- 0
+             if(cont_codata){ 
+               muinitp <- rep(0,p)
+             }else{
+               muinitp <- as.vector(c(muhat[,1])%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p (0 for unpenalised covariates) 
+               muinitp[(1:p)%in%unpen] <- 0
+             }
              glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
                                  lambda = lambda/n*sd_y,family=fml,
                                  offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], 
@@ -628,8 +712,12 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
              lambdap <- rep(lambda,p) #px1 vector with penalty for each beta_k, k=1,..,p
              lambdap[(1:p)%in%unpen] <- 0
              
-             muinitp<- as.vector(c(muhat[,1])%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p 
-             muinitp[(1:p)%in%unpen] <- 0
+             if(cont_codata){ 
+               muinitp <- rep(0,p)
+             }else{
+               muinitp <- as.vector(c(muhat[,1])%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p (0 for unpenalised covariates) 
+               muinitp[(1:p)%in%unpen] <- 0
+             }
              glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
                                  lambda = lambda/n*sd_y,family=fml,
                                  offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], intercept = intrcpt, standardize = FALSE,
@@ -704,9 +792,13 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
              #initial estimate for beta
              lambdap <- rep(lambda,p) #px1 vector with penalty for each beta_k, k=1,..,p
              lambdap[(1:p)%in%unpen] <- 0
-             muinitp<- as.vector(c(muhat[,1])%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p
-             muinitp[(1:p)%in%unpen] <- 0
-             glmGRtrgt <- glmnet::glmnet(X,as.matrix(Y),alpha=0,
+             if(cont_codata){ 
+               muinitp <- rep(0,p)
+             }else{
+               muinitp <- as.vector(c(muhat[,1])%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p (0 for unpenalised covariates) 
+               muinitp[(1:p)%in%unpen] <- 0
+             }
+             glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
                                  lambda = 2*lambda/n*sd_y,family=fml,
                                  offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], standardize = FALSE,
                                  penalty.factor=penfctr,thresh = 10^-10)
@@ -788,7 +880,9 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
       
       svdX<-svd(Xpen) #X=UDV^T=RV^T
       svdXR<-svdX$u%*%diag(svdX$d) #R=UD
-      L2<-as.matrix(Matrix::sparseMatrix(i=1:length(pen),j=1:length(pen),x=Matrix::diag(Deltac)[pen]^(-0.5))%*%svdX$v%*%solve(t(svdXR)%*%svdXR+diag(1,n),t(svdXR)%*%t(CP1)))
+      L2 <- as.matrix(Matrix::sparseMatrix(i=1:length(pen),j=1:length(pen),
+                 x=Matrix::diag(Deltac)[pen]^(-0.5))%*%svdX$v%*%solve(t(svdXR)%*%
+                                                    svdXR+diag(1,n),t(svdXR)%*%t(CP1)))
       L<-array(0,c(p+intrcpt,n))
       L[pen,]<-L2 #compute only elements corresponding to penalised covariates
       
@@ -803,6 +897,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
       # XtXD <- t(Xc)%*%Xc+Deltac
       # XtXDinv <- solve(XtXD) #inverting pxp matrix really slow, use SVD instead
       # L1<-XtXDinv %*% t(Xc)
+      # L1 <- solve(XtXD,t(Xc))
       # R<-Xc
       # V1<-sigmahat*apply(L,1,function(x){sum(x^2)})
       # #same as: V <- sigmahat*diag(L%*%R %*% XtXDinv) 
@@ -828,8 +923,8 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
       mukhat1<- muinitp[pen] + L[pen,]%*%(R[,pen]%*%(mutrgt-muinitp[pen]))
 
       #update tau overall
-      Btau1 <- sum(pmax((betasinit[pen]^2-mukhat1[pen]^2)/V[pen]-1,0),na.rm=TRUE) / length(pen)
-      #Btau1 <- sum((betasinit[pen]^2-mukhat1[pen]^2)/V[pen]-1,na.rm=TRUE) / length(pen)
+      #Btau1 <- sum(pmax((betasinit[pen]^2-mukhat1[pen]^2)/V[pen]-1,0),na.rm=TRUE) / length(pen)
+      Btau1 <- sum((betasinit[pen]^2-mukhat1[pen]^2)/V[pen]-1,na.rm=TRUE) / length(pen)
       pen2 <- setdiff(pen,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
       A1<-sum((t(L[pen2,]/c(V[pen2]))%*%L[pen2,])*(R[,pen2]%*%t(R[,pen2])),na.rm=TRUE)/length(pen)
       tauglobal<-Btau1/A1
@@ -886,7 +981,12 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
       
       #extract parts of global variables for local copy
       if(length(Partitions)<m | m==1){
-        Zt <- Zt[unlist(indGrpsGlobal[Partitions]),,drop=FALSE]
+        if(cont_codata){
+          Zt <- Zt
+        }else{
+          Zt <- Zt[unlist(indGrpsGlobal[Partitions]),,drop=FALSE]
+        }
+        
         if(missing(pars)){
           ind0 <- which(unlist(indGrpsGlobal[Partitions])%in%ind0)
           indnot0 <- which(unlist(indGrpsGlobal[Partitions])%in%indnot0)
@@ -923,7 +1023,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
           if(!silent) print(paste("Group set ",Partitions,": estimate hyperlambda for ",hypershrinkage," hypershrinkage",sep=""))
         }
       }
-      if(length(G)==1 && G==1){
+      if(length(G)==1 && G==1 && !cont_codata){
         lambdashat <- c(0,0)
         muhat <- mutrgt
         weightsMu <- NaN
@@ -931,7 +1031,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
           gamma <- 1
           gammatilde <- gamma
         }
-      }else if(!grepl("none",hypershrinkage) & !all(G==1) & length(indnot0)>1){ 
+      }else if(!cont_codata & !grepl("none",hypershrinkage) & !all(G==1) & length(indnot0)>1){ 
         #-3.3.3|1 With extra shrinkage -----------------------------------------------------------------
         # Use splits to penalise for too many groups
         # Minimise RSS over lambda1, lambda2 to find optimal penalties for shrinkage on group level
@@ -1271,10 +1371,10 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
                   #compute row with gamma_{xy}
                   x<-groupsets[[i]][[j]]
                   x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
-                  sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%
-                        (muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
-                  #sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%
-                  #           (muhatp[pen]-muinitp[pen])))^2)/V[x]-1,na.rm=TRUE)/Kg[[i]][j]
+                  #sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%
+                  #      (muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
+                  sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%
+                         (muhatp[pen]-muinitp[pen])))^2)/V[x]-1,na.rm=TRUE)/Kg[[i]][j]
                 })
               })
             )
@@ -1294,7 +1394,7 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
               })
             ),c(sum(G),sum(G)),byrow=TRUE) #reshape to matrix of size sum(G)xsum(G)
             
-            constA <- 1#mean(diag(A),na.rm=TRUE)
+            constA <- 1 #mean(diag(A),na.rm=TRUE)
             Btau <- Btau/constA
             A <- A/constA
             
@@ -1315,9 +1415,8 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
                     #compute row with gamma_{xy}
                     x<-INDin[[i]][[split]][[j]]
                     x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
-                    sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
-                    #sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%
-                    #            (muhatp[pen]-muinitp[pen])))^2)/V[x]-1,na.rm=TRUE)/Kg[[i]][j]
+                    #sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
+                    sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1,na.rm=TRUE)/Kg[[i]][j]
                   })
                 })
               )/constA
@@ -1369,9 +1468,8 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
                   #compute row with gamma_{xy}
                   x<-INDout[[i]][[split]][[j]]
                   x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
-                  sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
-                  #sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%
-                  #    (muhatp[pen]-muinitp[pen])))^2)/V[x]-1,na.rm=TRUE)/Kg[[i]][j]
+                  #sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
+                  sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1,na.rm=TRUE)/Kg[[i]][j]
                 })
               })
             )/constA
@@ -1939,8 +2037,199 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
           
           if(any(is.nan(gamma))){warning("NaN in group variance");browser()}
         }
+      }else if(cont_codata){
+        #-3.3.3|2 With co-data provided in Z matrix-----------------------------------------------------
+        lambdashat <- c(0,0) 
+        
+        #-3.3.3|2.1 EB estimate group means ============================================================
+        #Not yet supported
+        muhatp <-as.vector(rep(mu,sum(G))%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p
+        muhatp[(1:p)%in%unpen] <- 0
+        weightsMu <- rep(NaN,sum(G))
+        if(!is.nan(mu)){
+          muhat<-rep(mu,length(muhat))
+        }else{
+          if(cont_codata) stop("Not implemented for prior means, provide co-data
+                                  in groupsets")
+        }
+        
+        #-3.3.3|2.2 EB estimate group variances ========================================================
+        if(!is.nan(tausq)){
+          gamma <- rep(1,length(gamma))
+        }else{
+          x<-pen
+          x<-setdiff(x,zeroV)
+          Btau <- ((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1)
+          #Btau <- pmax(0,((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1))
+          Alist <- lapply(Z,function(Zi){
+            A <- as.matrix(((L[x,]%*%R[,x])^2/c(V[x]))%*%Zi[x,]*c(tauglobal[datablockNo[x]]))
+            return(A)
+          })
+          #A is all co-data matrices stacked
+          A <- as.matrix(((L[x,]%*%R[,x])^2/c(V[x]))%*%t(Zt[,x])*c(tauglobal[datablockNo[x]]))
+          
+          names(Alist) <- paste("Z",1:length(Alist),sep="")
+          Aintrcpt <- as.matrix(((L[pen,]%*%R[,pen])^2/c(V[pen]))%*%rep(1,length(pen))*
+                                  c(tauglobal[datablockNo[x]]))
+          
+          if(grepl("mgcv",hypershrinkage)){
+            #fit bam on U directly with penalty matrix splineS
+            if(intrcpt.bam){
+              fmla <- as.formula(paste("Btau ~ -1 + Aintrcpt +", paste(names(Alist), collapse= "+")))
+              fit2 <- mgcv::bam( formula=fmla, data=c(list(Btau=Btau,Aintrcpt=Aintrcpt),Alist), 
+                                 paraPen = paraPen,
+                                 #paraPen = list(A=list(S1=splineS)),
+                                 method=bam.method) #can include ridge penalty if desired (with list(splineS, DeltaRidge))
+              gamma <- fit2$coefficients
+              
+              # #try least absolute deviation 
+              # lam <- 10^12
+              # Btauplus <- c(Btau,rep(0,dim(splineS)[1]))
+              # Aplus <- rbind(cbind(Aintrcpt,A),cbind(rep(0,dim(splineS)[1]),lam*splineS))
+              # qfit <- rq(Btauplus ~ Aplus - 1)
+              # a <- coefficients(qfit)
+              # plot(z,splineB%*%a[-1]+a[1])
+ 
+              #gamma formulation
+              if(gammaForm){
+                fmla <- as.formula(paste("Btau2 ~ -1 + Aintrcpt +", paste(names(Alist), collapse= "+")))
+                Btau2 <- ((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x])
+                
+                fit2 <- mgcv::bam( formula = fmla, data=c(list(Btau2=Btau2,Aintrcpt=Aintrcpt),Alist), 
+                                   paraPen = paraPen,
+                                   method=bam.method,family = Gamma(link="identity"),
+                                   offset=rep(1,length(Btau2))) 
+                gamma <- fit2$coefficients
+              }
+              
+            }else{
+              fmla <- as.formula(paste("Btau ~ -1 +", paste(names(Alist), collapse= "+")))
+              fit2 <- mgcv::bam( formula = fmla, data=c(list(Btau=Btau), Alist), 
+                                 #paraPen = list(A=list(S1=splineS)),
+                                 paraPen = paraPen,
+                                 method=bam.method) #can include ridge penalty if desired (with list(splineS, DeltaRidge))
+              gamma <- rep(0,sum(G)+1)
+              gamma[-1] <- fit2$coefficients
+              
+              #gamma formulation
+              if(gammaForm){
+                fmla <- as.formula(paste("Btau2 ~ -1 +", paste(names(Alist), collapse= "+")))
+                Btau2 <- ((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x])
+                
+                fit2 <- mgcv::bam( formula = fmla, data=c(list(Btau2=Btau2),Alist), 
+                                   #paraPen = list(A=list(S1=splineS)),
+                                   paraPen = paraPen,
+                                   method=bam.method,family = Gamma(link="identity"),
+                                   offset=rep(1,length(Btau2))) 
+                gamma <- rep(0,sum(G)+1)
+                gamma[-1] <- fit2$coefficients
+              }
+            }
+            
+            lambdashat <- fit2$sp
+            gammatilde <- gamma
+            
+          }else if(hypershrinkage=="none.positive"){ #no shrinkage with positive constraint
+            if(intrcpt.bam){
+              # lam <- 10^1
+              # Bext <- c(Btau,rep(0,dim(A)[2]))
+              # Aext <- rbind(cbind(Aintrcpt,A), cbind(rep(0,dim(A)[2]), lam*paraPen))
+              # fit2 <- nnls::nnls(Aext,Bext)
+              fit2 <- nnls::nnls(cbind(Aintrcpt,A),Btau)
+              gamma <- as.vector(fit2$x)
+            }else{
+              # lam <- 10^3
+              # Bext <- c(Btau,rep(0,dim(A)[2]))
+              # Aext <- rbind(A, lam*paraPen)
+              # fit2 <- nnls::nnls(Aext,Bext)
+              fit2 <- nnls::nnls(A,Btau)
+              gamma <- rep(0,sum(G))+1
+              gamma[-1] <- as.vector(fit2$x)
+            }
+          }else if(hypershrinkage=="none.mi"){ #monotone increasing
+            warning("Option not yet optimised for hyperpenalty and for one 
+                    co-data variable")
+            splineS <- diag(rep(1,dim(A)[2]))
+            if(intrcpt.bam){
+              lam <- 10^-5
+              Sigma.mi <- diag(rep(1,dim(A)[2]))
+              Sigma.mi[lower.tri(Sigma.mi)] <- 1
+              Bext <- c(Btau,rep(0,dim(A)[2]))
+              Aext <- rbind(cbind(Aintrcpt,A%*%Sigma.mi),
+                            cbind(rep(0,dim(A)[2]),
+                                  lam*t(Sigma.mi)%*%splineS%*%Sigma.mi))
+              fit2 <- nnls::nnls(Aext,Bext)
+              gamma <- c(fit2$x[1], Sigma.mi%*%as.vector(fit2$x[-1]))
+            }else{
+              lam <- 10^-5
+              Sigma.mi <- diag(rep(1,dim(A)[2]))
+              Sigma.mi[lower.tri(Sigma.mi)] <- 1
+              Bext <- c(Btau,rep(0,dim(A)[2]))
+              Aext <- rbind(A%*%Sigma.mi,
+                            lam*t(Sigma.mi)%*%splineS%*%Sigma.mi)
+              fit2 <- nnls::nnls(Aext,Bext)
+              gamma <- rep(0,sum(G)+1)
+              gamma[-1] <- Sigma.mi%*%as.vector(fit2$x)
+            }
+          }else if(hypershrinkage=="none.md"){ #monotone decreasing
+            warning("Option not yet optimised for hyperpenalty and for one 
+                    co-data variable")
+            splineS <- diag(rep(1,dim(A)[2]))
+            if(intrcpt.bam){
+              lam <- 10^-5
+              Sigma.mi <- diag(rep(1,dim(A)[2]))
+              Sigma.mi[upper.tri(Sigma.mi)] <- 1
+              Bext <- c(Btau,rep(0,dim(A)[2]))
+              Aext <- rbind(cbind(Aintrcpt,A%*%Sigma.mi),
+                            cbind(rep(0,dim(A)[2]),
+                                  lam*t(Sigma.mi)%*%splineS%*%Sigma.mi))
+              fit2 <- nnls::nnls(Aext,Bext)
+              gamma <- c(fit2$x[1], Sigma.mi%*%as.vector(fit2$x[-1]))
+            }else{
+              lam <- 10^-5
+              Sigma.mi <- diag(rep(1,dim(A)[2]))
+              Sigma.mi[upper.tri(Sigma.mi)] <- 1
+              Bext <- c(Btau,rep(0,dim(A)[2]))
+              Aext <- rbind(A%*%Sigma.mi,
+                            lam*t(Sigma.mi)%*%splineS%*%Sigma.mi)
+              fit2 <- nnls::nnls(Aext,Bext)
+              gamma <- rep(0,sum(G)+1)
+              gamma[-1] <- Sigma.mi%*%as.vector(fit2$x)
+            }
+          }else{
+            stop("hypershrinkage incorrect")
+          }
+          
+          
+          if(class(fit2)[1]=="nnls"){
+            plot(fit2$fitted[1:p],Btau)
+            abline(0,1)
+            hist((fit2$fitted[1:p]-Btau))
+          }else{
+            plot(fit2$fitted.values,Btau)
+            abline(0,1)
+            hist((fit2$fitted.values-Btau))
+          }
+            
+          #plot(z[pen],t(Zt[,pen])%*%gamma[-1]+gamma[1])
+          #browser()
+          return(list(
+            lambdashat=lambdashat,
+            muhat=muhat,
+            gamma=gamma,
+            gammatilde=gammatilde,
+            hypershrinkage=hypershrinkage,
+            weightsMu=weightsMu
+          ))
+          
+          # x<-pen
+          # x<-setdiff(x,zeroV)
+          # Btau <- ((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1)
+          # #Btau <- pmax(0,((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1))
+          # A <- as.matrix(((L[x,]%*%R[,x])^2/c(V[x]))%*%t(Zt[,x,drop=FALSE])*c(tauglobal[datablockNo[x]]))
+        }  
       }else{ 
-        #-3.3.3|2 Without extra shrinkage --------------------------------------------------------------
+        #-3.3.3|2 Without extra shrinkage---------------------------------------------------------------
         lambdashat <- c(0,0) 
         
         #-3.3.3|2.1 EB estimate group means ============================================================
@@ -2024,9 +2313,8 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
                 #compute row with gamma_{xy}
                 x<-groupsets[[i]][[j]]
                 x<-setdiff(x,zeroV) #ad-hoc fix: remove covariates with 0 variance (will be set to 0 anyways)
-                sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
-                #sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%
-                #            (muhatp[pen]-muinitp[pen])))^2)/V[x]-1,na.rm=TRUE)/Kg[[i]][j]
+                #sum(pmax(0,(betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1),na.rm=TRUE)/Kg[[i]][j]
+                sum((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,pen]%*%(muhatp[pen]-muinitp[pen])))^2)/V[x]-1,na.rm=TRUE)/Kg[[i]][j]
               })
             })
           )
@@ -2046,26 +2334,61 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
           ),c(sum(G),sum(G)),byrow=TRUE) #reshape to matrix of size sum(G)xsum(G)
           
           if(any(is.nan(fixWeightsTau))){
-            if(grepl("positive",hypershrinkage)){
-              penMSE <- function(gamma,b,A,lam) return(sum((b-A%*%gamma)^2)) 
-              #Aacc <- A%*%Wminhalf
-              
-              gamma <- rep(0,G)
-              fitTau <- Rsolnp::solnp(par = rep(1,length(indnot0)), fun=penMSE, b=Btau[indnot0],
-                              A=A[indnot0,indnot0],
-                              LB = rep(0,length(indnot0)),control=list(trace=0))
-              gamma[indnot0] <- as.vector(fitTau$pars)
-              gammatilde <- gamma
+            if(!cont_codata){
+              if(grepl("positive",hypershrinkage)){
+                # penMSE <- function(gamma,b,A,lam) return(sum((b-A%*%gamma)^2)) 
+                # #Aacc <- A%*%Wminhalf
+                # gamma <- rep(0,G)
+                # fitTau <- Rsolnp::solnp(par = rep(1,length(indnot0)), fun=penMSE, b=Btau[indnot0],
+                #                         A=A[indnot0,indnot0],
+                #                         LB = rep(0,length(indnot0)),control=list(trace=0))
+                # gamma[indnot0] <- as.vector(fitTau$pars)
+                # gammatilde <- gamma
+                
+                gamma <- rep(0,G)
+                fitTau <- nnls::nnls(A[indnot0,indnot0],Btau[indnot0])
+                gamma[indnot0] <- as.vector(fitTau$x)
+                gammatilde <- gamma
+              }else{
+                gamma <- rep(0,G)
+                gammatilde <- solve(t(A[indnot0,indnot0])%*%A[indnot0,indnot0],
+                                    t(A[indnot0,indnot0])%*%Btau[indnot0])
+                gamma <- pmax(0,gammatilde)
+                
+                if(normalise){
+                  Cnorm <- p/sum(c(gamma)%*%Zt[,pen])
+                  gamma<-gamma*Cnorm
+                }
+              }
             }else{
-              gamma <- rep(0,G)
-              gammatilde <- solve(t(A[indnot0,indnot0])%*%A[indnot0,indnot0],
-                                 t(A[indnot0,indnot0])%*%Btau[indnot0])
-              gamma <- pmax(0,gammatilde)
-              if(normalise){
-                Cnorm <- p/sum(c(gamma)%*%Zt)
-                gamma<-gamma*Cnorm
+              if(grepl("positive",hypershrinkage)){
+                # penMSE <- function(gamma,b,A,lam) return(sum((b-A%*%gamma)^2))
+                # #Aacc <- A%*%Wminhalf
+                # 
+                # gamma <- rep(0,G)
+                # fitTau <- Rsolnp::solnp(par = rep(1,length(indnot0)), fun=penMSE, b=Btau,
+                #                         A=A[,indnot0,drop=FALSE],
+                #                         LB = rep(0,length(indnot0)),control=list(trace=0))
+                # gamma[indnot0] <- as.vector(fitTau$pars)
+                # gammatilde <- gamma
+                
+                gamma <- rep(0,G)
+                fitTau <- nnls::nnls(A[,indnot0,drop=FALSE],Btau)
+                gamma[indnot0] <- as.vector(fitTau$x)
+                gammatilde <- gamma
+              }else{
+                gamma <- rep(0,G)
+                gammatilde <- solve(t(A[,indnot0,drop=FALSE])%*%A[,indnot0,drop=FALSE],
+                                    t(A[,indnot0,drop=FALSE])%*%Btau)
+                gamma <- gammatilde
+                #gamma <- pmax(0,gammatilde)
+                # if(normalise){
+                #   Cnorm <- p/sum(c(gamma)%*%Zt[,pen])
+                #   gamma<-gamma*Cnorm
+                # }
               }
             }
+            
             if(any(is.nan(gamma))){warning("NaN in group variance")}
           }else{ #compute partition weights/co-data weights
             if(!silent) print("Estimate group set weights")
@@ -2087,7 +2410,8 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
               
               #Three options to solve for partition weights (use only one):
               #Solve for tau and truncate negative values to 0
-              cosangle<-t(as.matrix(t(Zt)%*%weightMatrixTau))%*%as.matrix(t(Zt)%*%weightMatrixTau)
+              #browser()
+              cosangle<-t(as.matrix(t(Zt[,pen])%*%weightMatrixTau))%*%as.matrix(t(Zt[,pen])%*%weightMatrixTau)
               cosangle<-abs(t(cosangle/sqrt(diag(cosangle)))/sqrt(diag(cosangle)))
               cosangle <- cosangle-diag(rep(1,m))
               if(any(cosangle>0.999)){
@@ -2189,73 +2513,120 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
     }
     
     #For each partition/dataset, use MoM to get group weights
-    #NOTE: possible to use different penalty functions
-    MoMGroupRes <- lapply(1:m,function(i){
+    if(!cont_codata){
+      #NOTE: possible to use different penalty functions
+      MoMGroupRes <- lapply(1:m,function(i){
+        if(partWeightsTau[i,Itr]!=0){
+          MoM(Partitions=i,hypershrinkage=hypershrinkage[i],groupsets.grouplvl=groupsets.grouplvl[[i]])
+        }else{
+          return(list(muhat = muhat[indGrpsGlobal[[i]],Itr],
+                      gammatilde = gammatilde[indGrpsGlobal[[i]],Itr],
+                      gamma = gamma[indGrpsGlobal[[i]],Itr],
+                      weightsMu = weightsMu[indGrpsGlobal[[i]],Itr],
+                      lambdashat = lambdashat[i, Itr,],
+                      hypershrinkage=hypershrinkage[i]))
+        }
+      }
+      )
+      
+      #global update group parameters
+      muhat[,Itr+1]<-unlist(lapply(MoMGroupRes,function(prt){prt$muhat}))
+      gammatilde[,Itr+1] <- unlist(lapply(MoMGroupRes,function(prt){prt$gammatilde}))
+      gamma[,Itr+1] <- unlist(lapply(MoMGroupRes,function(prt){prt$gamma}))
+      weightsMu[,Itr+1] <- unlist(lapply(MoMGroupRes,function(prt){prt$weightsMu}))
+      lambdashat[, Itr+1,] <- array(unlist(lapply(MoMGroupRes,function(prt){prt$lambdashat})),c(2,1,m))
+      
+      
+      #For fixed group weights, use MoM to get partition/co-data weights
+      if(m>1){
+        if(!is.nan(w)){
+          if(is.nan(mu)){
+            partWeightsMu[,Itr+1] <- w
+            partWeightsMuG[,Itr+1] <- unlist(sapply(1:m,function(x){rep(partWeightsMu[x,Itr+1],G[x])})) #total number of groups x 1 vector with partition weights
+          }
+          if(is.nan(tausq)){
+            partWeightsTau[,Itr+1] <- w
+            partWeightsTauG[,Itr+1] <- unlist(sapply(1:m,function(x){rep(partWeightsTau[x,Itr+1],G[x])})) #total number of groups x 1 vector with partition weights
+          }
+        }else{
+          if(!all(round(gamma[,Itr+1],10)==1)){
+            #if(!any(partWeightsTau[,Itr]==0)){
+            MoMPartRes <- MoM(Partitions=1:m,hypershrinkage="none",fixWeightsMu=weightsMu[,Itr+1],fixWeightsTau=gamma[,Itr+1])
+            # }else{
+            #   partNot0 <- which(partWeightsTau[,Itr]!=0)
+            #   MoMPartRes <- MoM(Partitions=partNot0,hypershrinkage="none",
+            #                     fixWeightsMu=weightsMu[unlist(indGrpsGlobal[partNot0]),Itr+1],
+            #                     fixWeightsTau=gamma[unlist(indGrpsGlobal[partNot0]),Itr+1])
+            # }
+            
+          }
+          if(is.nan(mu)){
+            partWeightsMu[,Itr+1] <- MoMPartRes$weightsMu
+            partWeightsMuG[,Itr+1] <- unlist(sapply(1:m,function(x){rep(partWeightsMu[x,Itr+1],G[x])})) #total number of groups x 1 vector with partition weights
+          }
+          if(is.nan(tausq)){
+            if(all(round(gamma[,Itr+1],10)==1)){
+              partWeightsTau[,Itr+1] <- rep(1/m,m)
+              partWeightsTauG[,Itr+1] <- unlist(sapply(1:m,function(x){rep(partWeightsTau[x,Itr+1],G[x])})) #total number of groups x 1 vector with partition weights
+            }else{
+              partWeightsTau[,Itr+1] <- pmax(MoMPartRes$gamma,0)
+              partWeightsTauG[,Itr+1] <- unlist(sapply(1:m,function(x){rep(partWeightsTau[x,Itr+1],G[x])})) #total number of groups x 1 vector with partition weights
+            }
+          }
+        }
+      }
+    }else{
+      #compute co-data variable weights
       if(partWeightsTau[i,Itr]!=0){
-        MoM(Partitions=i,hypershrinkage=hypershrinkage[i],groupsets.grouplvl=groupsets.grouplvl[[i]])
+        MoMGroupRes <- MoM(Partitions=1:m,hypershrinkage=hypershrinkage,
+                           groupsets.grouplvl=NULL)
       }else{
-        return(list(muhat = muhat[indGrpsGlobal[[i]],Itr],
+        MoMGroupRes <- list(muhat = muhat[indGrpsGlobal[[i]],Itr],
                     gammatilde = gammatilde[indGrpsGlobal[[i]],Itr],
                     gamma = gamma[indGrpsGlobal[[i]],Itr],
                     weightsMu = weightsMu[indGrpsGlobal[[i]],Itr],
                     lambdashat = lambdashat[i, Itr,],
-                    hypershrinkage=hypershrinkage[i]))
+                    hypershrinkage=hypershrinkage[i])
       }
-    }
-    )
-
-    #global update group parameters
-    muhat[,Itr+1]<-unlist(lapply(MoMGroupRes,function(prt){prt$muhat}))
-    gammatilde[,Itr+1] <- unlist(lapply(MoMGroupRes,function(prt){prt$gammatilde}))
-    gamma[,Itr+1] <- unlist(lapply(MoMGroupRes,function(prt){prt$gamma}))
-    weightsMu[,Itr+1] <- unlist(lapply(MoMGroupRes,function(prt){prt$weightsMu}))
-    lambdashat[, Itr+1,] <- array(unlist(lapply(MoMGroupRes,function(prt){prt$lambdashat})),c(2,1,m))
-
-    
-    #For fixed group weights, use MoM to get partition/co-data weights
-    if(m>1){
-      if(!is.nan(w)){
-        if(is.nan(mu)){
-          partWeightsMu[,Itr+1] <- w
-          partWeightsMuG[,Itr+1] <- unlist(sapply(1:m,function(x){rep(partWeightsMu[x,Itr+1],G[x])})) #total number of groups x 1 vector with partition weights
-        }
-        if(is.nan(tausq)){
-          partWeightsTau[,Itr+1] <- w
-          partWeightsTauG[,Itr+1] <- unlist(sapply(1:m,function(x){rep(partWeightsTau[x,Itr+1],G[x])})) #total number of groups x 1 vector with partition weights
-        }
-      }else{
-        if(!all(round(gamma[,Itr+1],10)==1)){
-          #if(!any(partWeightsTau[,Itr]==0)){
-            MoMPartRes <- MoM(Partitions=1:m,hypershrinkage="none",fixWeightsMu=weightsMu[,Itr+1],fixWeightsTau=gamma[,Itr+1])
-          # }else{
-          #   partNot0 <- which(partWeightsTau[,Itr]!=0)
-          #   MoMPartRes <- MoM(Partitions=partNot0,hypershrinkage="none",
-          #                     fixWeightsMu=weightsMu[unlist(indGrpsGlobal[partNot0]),Itr+1],
-          #                     fixWeightsTau=gamma[unlist(indGrpsGlobal[partNot0]),Itr+1])
-          # }
-          
-        }
-        if(is.nan(mu)){
-          partWeightsMu[,Itr+1] <- MoMPartRes$weightsMu
-          partWeightsMuG[,Itr+1] <- unlist(sapply(1:m,function(x){rep(partWeightsMu[x,Itr+1],G[x])})) #total number of groups x 1 vector with partition weights
-        }
-        if(is.nan(tausq)){
-          if(all(round(gamma[,Itr+1],10)==1)){
-            partWeightsTau[,Itr+1] <- rep(1/m,m)
+      #global update group parameters
+      muhat[,Itr+1] <- MoMGroupRes$muhat
+      gamma0tilde <- MoMGroupRes$gammatilde[1]
+      gammatilde[,Itr+1] <- MoMGroupRes$gammatilde[-1]
+      gamma0 <- MoMGroupRes$gamma[1]
+      gamma[,Itr+1] <- MoMGroupRes$gamma[-1]
+      weightsMu[,Itr+1] <- MoMGroupRes$weightsMu
+      #lambdashat[, Itr+1,] <- MoMGroupRes$lambdashat #TD: maybe want bam penalties
+      
+      #group set weights intrinsic; set to 1
+      if(m>1){
+        if(!is.nan(w)){
+          if(is.nan(mu)){
+            partWeightsMu[,Itr+1] <- w
+            partWeightsMuG[,Itr+1] <- unlist(sapply(1:m,function(x){rep(partWeightsMu[x,Itr+1],G[x])})) #total number of groups x 1 vector with partition weights
+          }
+          if(is.nan(tausq)){
+            partWeightsTau[,Itr+1] <- w
             partWeightsTauG[,Itr+1] <- unlist(sapply(1:m,function(x){rep(partWeightsTau[x,Itr+1],G[x])})) #total number of groups x 1 vector with partition weights
-          }else{
-            partWeightsTau[,Itr+1] <- pmax(MoMPartRes$gamma,0)
+          }
+        }else{
+          if(is.nan(mu)){
+            partWeightsMu[,Itr+1] <- rep(1,m)
+            partWeightsMuG[,Itr+1] <- unlist(sapply(1:m,function(x){rep(partWeightsMu[x,Itr+1],G[x])})) #total number of groups x 1 vector with partition weights
+          }
+          if(is.nan(tausq)){
+            partWeightsTau[,Itr+1] <- rep(1,m)
             partWeightsTauG[,Itr+1] <- unlist(sapply(1:m,function(x){rep(partWeightsTau[x,Itr+1],G[x])})) #total number of groups x 1 vector with partition weights
           }
         }
       }
     }
+    
 
     if(all(is.nan(betaold))){
       betaold <-rep(1,p) #px1 vector with estimated prior mean for beta_k, k=1,..,p
     }
     if(is.nan(mu)){
-      muhatp <- as.vector(c(partWeightsMuG[,Itr+1]*muhat[,Itr+1])%*%Zt)*betaold[pen]
+      muhatp <- as.vector(c(partWeightsMuG[,Itr+1]*muhat[,Itr+1])%*%Zt[,pen])*betaold[pen]
       muhatp[(1:p)%in%unpen] <- 0
     }else{
       muhatp<-rep(mu,p)
@@ -2263,17 +2634,24 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
     
     #-3.3.4 Update group-specific penalties ###################################################################
     if(is.nan(tausq)){
-      if(all(gamma[,Itr+1]==0)){
+      if(all(gamma[,Itr+1]==0) & gamma0==0){
         if(all(muhatp==0)){
           warning("All group weights estimated at 0 and set to 1 to retrieve ordinary ridge performance")
-          gamma[,Itr+1]<-rep(1,G)
+          gamma[,Itr+1]<-rep(1,sum(G))
         }
       }
       if(all(partWeightsTauG==0)){#set all partition/group weights to 1 (i.e. no difference in partitions/groups)
-        lambdap<-sigmahat/(tauglobal[datablockNo]*as.vector(c(gamma[,1])%*%Zt)) #target tau/overall
+        lambdap<-sigmahat/(tauglobal[datablockNo]*as.vector(c(gamma[,1])%*%Zt[,pen]+gamma0)) #target tau/overall
         }else{
-          lambdap<-sigmahat/(tauglobal[datablockNo]*as.vector(c(partWeightsTauG[,Itr+1]*gamma[,Itr+1])%*%Zt)) #specific penalty for beta_k
-          lambdap[lambdap<0]<-Inf 
+          if(!cont_codata){
+            lambdap<-sigmahat/(tauglobal[datablockNo]*as.vector(c(partWeightsTauG[,Itr+1]*gamma[,Itr+1])%*%Zt[,pen]+gamma0)) #specific penalty for beta_k
+            lambdap[lambdap<0]<-Inf 
+          }else{
+            taup<-tauglobal[datablockNo]*as.vector(c(partWeightsTauG[,Itr+1]*gammatilde[,Itr+1])%*%Zt[,pen]+gamma0)
+            lambdap<-sigmahat/taup
+            lambdap[lambdap<0]<-Inf 
+          }
+          
         } 
       lambdap[(1:p)%in%unpen] <- 0
     }else{
@@ -2281,26 +2659,22 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
       lambdap[(1:p)%in%unpen] <- 0
     }
     #should be the same as
-    #lambdap2<-sigmahat/as.vector(c(partWeightsTauG*gamma*tauglobal)%*%Zt)
+    #lambdap2<-sigmahat/as.vector(c(partWeightsTauG*gamma*tauglobal)%*%Zt[,pen])
   
     #-3.3.5 Update beta using glmnet #######################################################################
     if(!silent) print("Estimate regression coefficients")
-    
-    if(all(gamma[,Itr+1]==0)){
-      if(!all(muhatp==0)){
-        beta <- muhatp
-        if(intrcpt){
-          if(model=="linear"){
-            glmGR <- list(a0=sum(Y-X%*%beta)/n)
-          }else if(model=='logistic'){
-            glmGR <- list(a0=sum(Y-exp(X%*%beta)/(1+exp(X%*%beta)))/n) 
-          }
-        }else{
-          glmGR <- list(a0=0)
+    if(all(gamma[,Itr+1]==0) | all(lambdap==Inf)){
+      beta <- muhatp
+      if(intrcpt){
+        if(model=="linear"){
+          glmGR <- list(a0=sum(Y-X%*%beta)/n)
+        }else if(model=='logistic'){
+          glmGR <- list(a0=sum(Y-exp(X%*%beta)/(1+exp(X%*%beta)))/n) 
         }
-        warning("All tau (set to) 0")
-    }
-      
+      }else{
+        glmGR <- list(a0=0)
+      }
+      warning("All regression coefficients (set to) 0 due too large penalties")
     }else{
       if(model=="linear"){
         sd_y2 <- sqrt(var(Y-X %*% muhatp)*(n-1)/n)[1]
@@ -2436,12 +2810,14 @@ ecpc <- function(Y,X,groupsets,groupsets.grouplvl=NULL,hypershrinkage,
   }
 
   #-6. Output -------------------------------------------------------------------------------------
+  names(gamma0)<-NULL
   output <- list(
     beta=beta, #beta from ecpc (with Group Ridge penalties)
     intercept=glmGR$a0, #unpenalised intercept covariate
     tauglobal=tauglobal, #overall tauglobal
     gammatilde = gammatilde[,nIt+1], #EB estimated prior group variance before truncating
     gamma=gamma[,nIt+1], #group weights variance
+    gamma0 = gamma0,
     w = partWeightsTau[,nIt+1], #group set weights in local variances
     penalties = lambdap, #penalty parameter on all p covariates
     hyperlambdas = lambdashat[2,nIt+1,], #hyperpenalties for all group sets
@@ -3284,7 +3660,7 @@ createGroupset <- function(values,index=NULL,grsize=NULL,ngroup=10,
 .mlestlin <- function(Y,XXt,Xrowsum,Xunpen=NULL,lambda=NaN,sigmasq=NaN,mu=NaN,tausq=NaN,intrcpt=TRUE){
   #lambda,sigmasq,mu are possibly fixed
   maxv <- var(Y)
-  #if(intrcpt) Y <- Y-mean(Y)
+  #if(intrcpt) Y <- Y - mean(Y)
   
   #p<-dim(X)[2]
   n<-length(Y)
