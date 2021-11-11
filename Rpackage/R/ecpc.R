@@ -815,7 +815,7 @@ ecpc <- function(Y,X,
                muinitp[(1:p)%in%unpen] <- 0
              }
              glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
-                                 lambda = 2*lambda/n*sd_y,family=fml,
+                                 lambda = lambda/n*sd_y,family=fml,
                                  offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], standardize = FALSE,
                                  penalty.factor=penfctr,thresh = 10^-10)
              betasinit <- as.vector(glmGRtrgt$beta)
@@ -959,7 +959,7 @@ ecpc <- function(Y,X,
       muinitp[(1:p)%in%unpen] <- 0
       if(model=="cox"){
         glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
-                        lambda = lambda/n*sd_y*2,family=fml,
+                        lambda = lambda/n*sd_y,family=fml,
                         offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], standardize = FALSE,
                         penalty.factor=penfctr)
       }else if(model=="logistic"){
@@ -2699,7 +2699,7 @@ ecpc <- function(Y,X,
       
       if(model=="cox"){
         glmGR <- glmnet::glmnet(Xacc,Y,alpha=0,
-                        lambda = lambdaoverall/n*sd_y2*2,family=fml,
+                        lambda = lambdaoverall/n*sd_y2,family=fml,
                         offset = X[,!((1:p)%in%unpen)] %*% muhatp[!((1:p)%in%unpen)], standardize = FALSE,
                         penalty.factor=penfctr, thresh=10^-10)
       }else{
@@ -2785,7 +2785,7 @@ ecpc <- function(Y,X,
                                                      x=c(1/sqrt(lambdaridge[datablockNo[pen]]/lambdaoverall))))
     if(model=="cox"){
       glmR <- glmnet::glmnet(Xacc,Y,family=fml,alpha=0,
-                     lambda=lambdaoverall*sd_y/n*2,standardize = FALSE,
+                     lambda=lambdaoverall*sd_y/n,standardize = FALSE,
                      penalty.factor=penfctr,thresh = 10^-10)
     }else{
       glmR <- glmnet::glmnet(X,Y,family=fml,alpha=0,
@@ -3010,7 +3010,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           else {
             if(model=="cox"){
               glmPost <- glmnet::glmnet(Xacc[,nonzeros],Y,alpha=alpha,
-                              lambda = lam2*2/(1-alpha),family=fml,
+                              lambda = lam2/(1-alpha),family=fml,
                               offset = offset, standardize = FALSE,
                               penalty.factor=penfctr[nonzeros], thresh=10^-10)
             }else if(model %in% c("logistic","linear")){
@@ -3041,7 +3041,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
         #for found alpha, refit model to see which beta are selected
         if(model=="cox"){
           glmPost0 <- glmnet::glmnet(Xacc[,nonzeros],Y,alpha=alpha,
-                           lambda = lam2*2/(1-alpha),family=fml,
+                           lambda = lam2/(1-alpha),family=fml,
                            offset = offset, standardize = FALSE,
                            penalty.factor=penfctr[nonzeros], thresh=10^-10)
         }else{
@@ -3412,7 +3412,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
 
           if(model=="cox"){
             glmPost <- glmnet::glmnet(Xacc[,indAll, drop=FALSE],Y,alpha=0,
-                            lambda = lam2*2,family=fml,
+                            lambda = lam2,family=fml,
                             offset = offset ,standardize = FALSE,
                             penalty.factor=penfctr[indAll], thresh=10^-10)
           }else{
