@@ -95,6 +95,7 @@ A list with the following elements:
 }
 
 \examples{
+\donttest{
 #####################
 # Simulate toy data #
 #####################
@@ -124,5 +125,5 @@ fitPost <- postSelect(Y=Dat$Y,X=Dat$Xctd, beta=fit$beta, intrcpt = fit$intercept
                       maxsel = c(5,10,15,20), penalties=fit$penalties, 
                       tauglobal=fit$tauglobal, sigmahat = fit$sigmahat)
 summary(fit$betaPost[,1]); summary(fitPost$betaPost[,1])
-
+}
 }

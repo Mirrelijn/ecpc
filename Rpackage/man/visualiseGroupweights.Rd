@@ -72,31 +72,27 @@ Plot in ggplot object.
 \code{\link{visualiseGroupset}} to visualise group sets and \code{\link{visualiseGroupsetweights}} to plot estimated group set weights.
 }
 \examples{
-# #required libraries
-# library(ggplot2)
-# library(dplyr)
-#
-# #discrete groups
-# groupset1 <- list(1:20,21:40)
-# dfGrps1 <- data.frame(Group=as.factor(rep(c(1,2),each=10)),
-#                      Group.weight=c(rnorm(10,0.5,0.01),rnorm(10,2,0.05)),
-#                      Fold=rep(1:10,2))
-# visualiseGroupweights(dfGrps1, Groupset=groupset1)
-# 
-# #continous co-data groups
-# cont.codata <- seq(0,1,length.out=40) #continuous co-data
-# #only split at lower continous co-data group
-# groupset2 <- splitMedian(values=cont.codata,split="lower",minGroupSize=10) 
-# #obtain groups on group level defining the hierarchy
-# groupset.grouplvl <- obtainHierarchy(groupset2) 
-# 
-# #simulate random group weights around 1
-# dfGrps2 <- data.frame(Group=as.factor(rep(1:length(groupset2),each=10)),
-#                       Group.weight=c(rnorm(10*length(groupset2),1,0.01)),
-#                       Fold=rep(1:10,length(groupset2))) 
-# #plot group weights per group
-# visualiseGroupweights(dfGrps2, Groupset=groupset2, groupset.grouplvl=groupset.grouplvl) 
-# #plot group weights per leaf group in the hierarchical tree
-# visualiseGroupweights(dfGrps2, Groupset=groupset2, groupset.grouplvl=groupset.grouplvl, 
-#                       values=cont.codata) 
+#discrete groups
+groupset1 <- list(1:20,21:40)
+dfGrps1 <- data.frame(Group=as.factor(rep(c(1,2),each=10)),
+                     Group.weight=c(rnorm(10,0.5,0.01),rnorm(10,2,0.05)),
+                     Fold=rep(1:10,2))
+visualiseGroupweights(dfGrps1, Groupset=groupset1)
+
+#continous co-data groups
+cont.codata <- seq(0,1,length.out=40) #continuous co-data
+#only split at lower continous co-data group
+groupset2 <- splitMedian(values=cont.codata,split="lower",minGroupSize=10)
+#obtain groups on group level defining the hierarchy
+groupset.grouplvl <- obtainHierarchy(groupset2)
+
+#simulate random group weights around 1
+dfGrps2 <- data.frame(Group=as.factor(rep(1:length(groupset2),each=10)),
+                      Group.weight=c(rnorm(10*length(groupset2),1,0.01)),
+                      Fold=rep(1:10,length(groupset2)))
+#plot group weights per group
+visualiseGroupweights(dfGrps2, Groupset=groupset2, groupset.grouplvl=groupset.grouplvl)
+#plot group weights per leaf group in the hierarchical tree
+visualiseGroupweights(dfGrps2, Groupset=groupset2, groupset.grouplvl=groupset.grouplvl,
+                      values=cont.codata)
 }

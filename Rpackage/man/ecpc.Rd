@@ -249,7 +249,7 @@ S1.Z2 <- createS(orderPen=2, G=dim(Z2)[2]) #create difference penalty matrix
 Z3 <- createZforGroupset(groupsetRandom,p=p)
 S1.Z3 <- createS(G=G, categorical = TRUE) #create difference penalty matrix
 
- 
+
 ############################
 # Fit ecpc on group sets.. #
 ############################
