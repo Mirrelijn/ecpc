@@ -1,10 +1,10 @@
 \name{createGroupset}
 \alias{createGroupset}
 \title{
-Creates a group set (groups) of variables
+Create a group set (groups) of variables
 }
 \description{
-Creates a group set (groups) of variables for categorical co-data (factor, character or boolean input), or for continuous co-data (numeric). Continuous co-data is discretised in non-overlapping groups.
+Create a group set (groups) of variables for categorical co-data (factor, character or boolean input), or for continuous co-data (numeric). Continuous co-data is discretised in non-overlapping groups.
 }
 \usage{
 createGroupset(values,index=NULL,grsize=NULL,ngroup=10,
