@@ -252,10 +252,11 @@ ecpc <- function(Y,X,
         indGrpsGlobal[[i]] <- (sum(G[1:(i-1)])+1):sum(G[1:i])
       }
     }
-    #stack transposed co-data matrices in one matrix
     Zt <- t(Z[[1]])
-    for(i in 2:m){
-      Zt <- rbind(Zt,t(Z[[i]]))
+    if(m>1){
+      for(i in 2:m){
+        Zt <- rbind(Zt,t(Z[[i]]))
+      }
     }
     Kg <- list(apply(Zt,1,function(x)(sum(!is.na(x))))) #m-list with G_i vector of group sizes in partition i
     
