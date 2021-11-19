@@ -2148,9 +2148,12 @@ ecpc <- function(Y,X,
               gamma[-1] <- as.vector(fit2$x)
             }
           }else if(hypershrinkage=="none.mi"){ #monotone increasing
-            warning("Option not yet optimised for hyperpenalty and for one 
-                    co-data variable")
-            splineS <- diag(rep(1,dim(A)[2]))
+            warning("Option not yet possible for multiple co-data sources")
+            if(is.null(paraPen)){
+              splineS <- diag(rep(1,dim(A)[2]))
+            }else{
+              splineS <- paraPen[[1]]$S1
+            }
             if(intrcpt.bam){
               lam <- 10^-5
               Sigma.mi <- diag(rep(1,dim(A)[2]))
@@ -2175,7 +2178,11 @@ ecpc <- function(Y,X,
           }else if(hypershrinkage=="none.md"){ #monotone decreasing
             warning("Option not yet optimised for hyperpenalty and for one 
                     co-data variable")
-            splineS <- diag(rep(1,dim(A)[2]))
+            if(is.null(paraPen)){
+              splineS <- diag(rep(1,dim(A)[2]))
+            }else{
+              splineS <- paraPen[[1]]$S1
+            }
             if(intrcpt.bam){
               lam <- 10^-5
               Sigma.mi <- diag(rep(1,dim(A)[2]))
@@ -2200,6 +2207,7 @@ ecpc <- function(Y,X,
           }else{
             stop("hypershrinkage incorrect")
           }
+          gammatilde <- gamma
           
           
           if(class(fit2)[1]=="nnls"){
