@@ -5,7 +5,7 @@
 
 
 ecpc <- function(Y,X,
-                 Z=NULL,intrcpt.bam=TRUE,paraPen=NULL,paraCon=NULL,bam.method="ML",
+                 Z=NULL,paraPen=NULL,paraCon=NULL,intrcpt.bam=TRUE,bam.method="ML",
                  groupsets=NULL,groupsets.grouplvl=NULL,hypershrinkage=NULL, #co-data former
                  unpen=NULL,intrcpt=TRUE,model=c("linear", "logistic", "cox"),
                  postselection="elnet,dense",maxsel=10,
@@ -1051,7 +1051,7 @@ ecpc <- function(Y,X,
         }else{
           if(grepl("none",hypershrinkage)){
             if(length(Partitions)==1){
-              if(!silent) print(paste("Co-data matrix ",names(Z)[Partitions],
+              if(!silent) print(paste("Co-data matrix ",Partitions,
                                       ": estimate weights, hypershrinkage type: ",
                                       hypershrinkage,sep=""))
             }
@@ -1526,7 +1526,7 @@ ecpc <- function(Y,X,
               
               #-3.3.3|1.2.3 Define function RSSlambdatau, #################################################
               # using the extra shrinkage penalty function corresponding to parameter hypershrinkage
-              rangelambda2 <- log(c(10^-5,10^6))
+              rangelambda2 <- c(10^-5,10^6)
               switch(hypershrinkage,
                      "ridge"={
                        gammatrgtG[indnot0] <- 1
@@ -1988,7 +1988,7 @@ ecpc <- function(Y,X,
               #find optimal lambda_2 given muhat
               
               tic<-proc.time()[[3]]
-              lambda2 <- optim(log(mean(rangelambda2)),RSSlambdatau,method="Brent",
+              lambda2 <- optim(mean(log(rangelambda2)),RSSlambdatau,method="Brent",
                                lower = log(rangelambda2[1]),upper = log(rangelambda2[2]))
               lambdashat[2] <- exp(lambda2$par)
               #exp(lambda2$par)
@@ -2425,9 +2425,13 @@ ecpc <- function(Y,X,
                            
                            Bext <- c(Btau,rep(0,length(indnot0)))
                            Aext <- rbind(A[,indnot0], lambda2*S1[indnot0,indnot0]) #include ridge penalty
-                           gammas[indnot0] <- lsqlincon(C=Aext, d=Bext, 
-                                               A=M.ineq[,indnot0], b=b.ineq, 
-                                               Aeq=M.eq[,indnot0], beq=b.eq)
+                           # gammas[indnot0] <- pracma::lsqlincon(C=Aext, d=Bext, 
+                           #                     A=M.ineq[,indnot0], b=b.ineq, 
+                           #                     Aeq=M.eq[,indnot0], beq=b.eq)
+                           gammas[indnot0] <- try(pracma::lsqlincon(C=Aext, d=Bext, 
+                                                                     A=M.ineq[,indnot0], b=b.ineq, 
+                                                                     Aeq=M.eq[,indnot0], beq=b.eq),silent=TRUE)
+                           if(class(gammas)[1]=="try-error") gammas <- rep(0,G)#return(Inf)
                            return(gammas)
                          }
                          
@@ -2440,9 +2444,17 @@ ecpc <- function(Y,X,
                              gammain <- rep(0,G)
                              Bextin <- c(Btau[INDin[,split]],rep(0,length(indnot0)))
                              Aextin <- rbind(A[INDin[,split],indnot0], lambda2*S1[indnot0,indnot0]) #include ridge penalty
-                             gammain[indnot0] <- lsqlincon(C=Aextin, d=Bextin, 
-                                                           A=M.ineq[,indnot0], b=b.ineq, 
-                                                           Aeq=M.eq[,indnot0], beq=b.eq)
+                             # gammain[indnot0] <- pracma::lsqlincon(C=Aextin, d=Bextin, 
+                             #                               A=M.ineq[,indnot0], b=b.ineq, 
+                             #                               Aeq=M.eq[,indnot0], beq=b.eq)
+                             
+                             #for very large or small lambda, may obtain inconsistent constraints
+                             #fix by setting to Inf
+                             temp <- try(pracma::lsqlincon(C=Aextin, d=Bextin, 
+                                                               A=M.ineq[,indnot0], b=b.ineq, 
+                                                               Aeq=M.eq[,indnot0], beq=b.eq),silent=TRUE)
+                             if(class(temp)[1]=="try-error") gammain <- rep(0,G)#return(Inf)
+                             else gammain[indnot0] <- temp
                              #compute MSE on out-part
                              MSE <- mean((A[INDout[,split],]%*%gammain - Btau[INDout[,split]])^2)
                              return(MSE)
@@ -2548,7 +2560,7 @@ ecpc <- function(Y,X,
                 if(hypershrinkage!="mgcv"){
                   #find optimal lambda_2 given muhat
                   tic<-proc.time()[[3]]
-                  lambda2 <- optim(log(mean(rangelambda2)),RSSlambdatau,method="Brent",
+                  lambda2 <- optim(mean(log(rangelambda2)),RSSlambdatau,method="Brent",
                                    lower = log(rangelambda2[1]),upper = log(rangelambda2[2]))
                   lambdashat[2] <- exp(lambda2$par)
                   #exp(lambda2$par)
@@ -2604,7 +2616,7 @@ ecpc <- function(Y,X,
                          }
                          
                          gamma <- rep(0,G)
-                         gamma[indnot0] <- lsqlincon(C=A[,indnot0], d=Btau, 
+                         gamma[indnot0] <- pracma::lsqlincon(C=A[,indnot0], d=Btau, 
                                                       A=M.ineq[,indnot0], b=b.ineq, 
                                                       Aeq=M.eq[,indnot0], beq=b.eq)
                          gammatilde <- gamma
@@ -2636,7 +2648,8 @@ ecpc <- function(Y,X,
                   
                   #solve with constraint w>=0
                   gammatilde<-rep(0,m)
-                  w <- lsqlincon(C=Atilde, d=Btau,lb=0)
+                  w <- try(pracma::lsqlincon(C=Atilde, d=Btau,lb=0),silent=TRUE)
+                  if(class(w)=="try-error") w <- rep(0,m)
                   gammatilde <- w
                   gamma <- w
                 }

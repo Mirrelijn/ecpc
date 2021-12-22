@@ -7,14 +7,15 @@ Fit adaptive multi-group ridge GLM with hypershrinkage
 }
 \description{
 %%  ~~ A concise (1-5 lines) description of what the function does. ~~
-Fits a generalised linear (linear, logistic) or Cox survival model, penalised with adaptive multi-group ridge penalties.
-The multi-group penalties correspond to groups of covariates defined by (multiple) co-data sources. 
-Group hyperparameters are estimated with an empirical Bayes method of moments, penalised with an extra level of hypershrinkage.
+Fits a generalised linear (linear, logistic) or Cox survival model, penalised with adaptive co-data learnt ridge penalties.
+The ridge penalties correspond to normal prior variances which are regressed on (multiple) co-data sources, e.g. for categorical co-data, each group of variables obtains a group-specific ridge penalty. 
+Co-data weights are estimated with an empirical Bayes method of moments, penalised with an extra level of hypershrinkage and possibly constrained by linear constraints.
 Various types of hypershrinkage may be used for various co-data, including overlapping groups, hierarchical groups and continuous co-data.
+P-splines may be used to estimate the relation between the prior variance and continuous co-data variables. This may be combined with linear constraints to estimate shape-constrained functions.
 }
 \usage{
 ecpc(Y, X,
-Z=NULL, intrcpt.bam=TRUE, paraPen=NULL, bam.method="ML",
+Z=NULL, paraPen=NULL, paraCon=NULL, intrcpt.bam=TRUE, bam.method="ML",
 groupsets=NULL, groupsets.grouplvl = NULL, hypershrinkage=NULL, 
 unpen = NULL, intrcpt = TRUE, model=c("linear","logistic","cox"), 
 postselection = "elnet,dense", maxsel = 10, 
@@ -36,13 +37,17 @@ Observed data; (nxp)-dimensional matrix (p: number of covariates) with each row 
 \item{Z}{
  List with m co-data matrices. Each element is a (pxG)-dimensional co-data matrix containing co-data on the p   variables. Co-data should either be provided in `Z' or `groupsets'. 
 }
+\item{paraPen}{
+  A list with generalised ridge penalty matrices used as hypershrinkage in estimating co-data weights, e.g. \code{list("Z2" = list("S1" = M1,"S2"= M2))} when the second co-data source given in `Z' should be penalised by a penalty matrix `M1' and `M2'. The names of the elements of the list should  be equal to `Zi' where `i' matches the index of the co-data matrix. The list elements should again be lists with elements `Si' for i=1,2,.. different generalised ridge penalty matrices. 
+  Same as the argument `paraPen' used in \code{bam} of `mgcv'.
+}
+\item{paraCon}{
+  A list with linear inequality and or equality constraints used in estimating co-data weights, e.g. \code{list("Z2" = list("M.ineq" = M1,"b.ineq"= b.ineq, "M.eq" = M2,"b.eq"= b.eq))}.
+  The names of the elements of the list should  be equal to `Zi' where `i' matches the index of the co-data matrix. The list elements should again be lists with elements `M.ineq', `b.ineq' for inequality constraints and `M.eq', `b.eq' for equality constraints, similar to the arguments used in \code{lsqlincon} of `pracma'.
+}
 \item{intrcpt.bam}{
  Should an intercept be included in the co-data model?
  Is used only when `Z' is provided, for which the function \code{bam} of `mgcv' is used to fit a generalised additive model. 
-}
-\item{paraPen}{
-  A list with generalised ridge penalty matrices used as hypershrinkage in estimating co-data weights, e.g. \code{list("Z2" = list("S1" = M1,"S2"= M2))} when the second co-data source given in `Z' should be penalised by a penalty matrix `M1' and `M2'. The names of the elements of the list should  be equal to ``Zi'' where `i' matches the index of the co-data matrix. The list elements should again be lists with elements `Si' for i=1,2,.. different generalised ridge penalty matrices. 
-  Same as the argument `paraPen' used in \code{bam} of `mgcv'.
 }
 \item{bam.method}{
 When `Z' is provided, `bam.method' indicates the method used in \code{bam} of `mgcv' to estimate the hyperpenalties corresponding to the generalised ridge penalty matrices given in `paraPen'.
@@ -244,10 +249,12 @@ Z1 <- cbind(continuousCodata,sqrt(continuousCodata))
 #setting 2: splines for informative continuous
 Z2 <- createZforSplines(values=continuousCodata)
 S1.Z2 <- createS(orderPen=2, G=dim(Z2)[2]) #create difference penalty matrix
+Con2 <- createCon(G=dim(Z2)[2], shape="positive+monotone.i") #create constraints
 
 #setting 3: 5 random groups
 Z3 <- createZforGroupset(groupsetRandom,p=p)
 S1.Z3 <- createS(G=G, categorical = TRUE) #create difference penalty matrix
+Con3 <- createCon(G=dim(Z3)[2], shape="positive") #create constraints
 
  
 ############################
@@ -277,13 +284,15 @@ fit$MSEPost #MSE on the test set of ecpc after posterior selection
 # ..or on co-data matrices #
 ############################
 
-#fit ecpc for the three co-data matrices with following penalty matrices
+#fit ecpc for the three co-data matrices with following penalty matrices and constraints
+#note: can also be fitted without paraPen and/or paraCon
 Z.all <- list(Z1=Z1,Z2=Z2,Z3=Z3)
 paraPen.all <- list(Z2=list(S1=S1.Z2), Z3=list(S1=S1.Z3))
+paraCon <- list(Z2=Con2, Z3=Con3)
 
 tic<-proc.time()[[3]]
 fit <- ecpc(Y=Dat$Y,X=Dat$Xctd,
-           Z = Z.all, paraPen = paraPen.all,
+           Z = Z.all, paraPen = paraPen.all, paraCon = paraCon,
            model="linear",maxsel=c(5,10,15,20),
            Y2=Dat$Y2,X2=Dat$X2ctd)
 toc <- proc.time()[[3]]-tic
