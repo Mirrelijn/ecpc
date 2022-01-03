@@ -64,3 +64,50 @@ createS <- function(orderPen=2,G=10,categorical=FALSE){
   }
   return(splineS)
 }
+
+#Create common constraints for argument paraCon----
+createCon <- function(G,shape="positive+monotone.i+convex"){
+  #G: number of groups in corresponding co-data source
+  #shape: any of positive, monotone.i/monotone.d (for increasing or decreasing),
+  # convex/concave, or a combination thereof by appending with +
+  
+  shapes <- strsplit(shape,split='+',fixed=TRUE)[[1]]
+  if(!(all(shapes%in%c("positive","monotone.i","monotone.d","convex","concave")))){
+    stop("Shape not supported")
+  }
+  if(any(shapes=="concave")&any(shapes=="convex")){
+    stop("Shape cannot be both convex and concave (then just use a constant intercept)")
+  }
+  if(any(shapes=="monotone.i")&any(shapes=="monotone.d")){
+    stop("Shape cannot be both monotonically increasing and decreasing 
+         (then just use a constant intercept)")
+  }
+  
+  M.ineq <- b.ineq <- NULL
+  for(shape in shapes){
+    switch(shape,
+           "positive"={
+             M.ineq <- rbind(M.ineq, -diag(1,G))
+             b.ineq <- c(b.ineq, rep(0,G))
+           },
+           "monotone.i"={
+             M.ineq <- rbind(M.ineq, -diff(diag(1,G),differences = 1))
+             b.ineq <- c(b.ineq, rep(0,G-1))
+           },
+           "monotone.d"={
+             M.ineq <- rbind(M.ineq, diff(diag(1,G),differences = 1))
+             b.ineq <- c(b.ineq, rep(0,G-1))
+           },
+           "convex"={
+             M.ineq <- rbind(M.ineq, -diff(diag(1,G),differences = 2))
+             b.ineq <- c(b.ineq, rep(0,G-2))
+           },
+           "concave"={
+             M.ineq <- rbind(M.ineq, diff(diag(1,G),differences = 2))
+             b.ineq <- c(b.ineq, rep(0,G-2))
+           }
+           )
+  }
+  
+  return(list(M.ineq=M.ineq, b.ineq=b.ineq))
+}
