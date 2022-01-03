@@ -270,7 +270,7 @@ ecpc <- function(Y,X,
         tempMat <- cbind(c("none","ridge"), c("none+constraints","ridge+constraints"))
         hypershrinkage[i] <- tempMat[1+bool.Pen, 1+bool.Con]
       }
-      if(all(!grepl("constraints",hypershrinkage))) hypershrinkage <- "mgcv"
+      if(all(!grepl("constraints",hypershrinkage)) & sum(G)>1) hypershrinkage <- "mgcv"
     }else if(!all(hypershrinkage%in%c("none","ridge","mgcv","none+constraints","ridge+constraints"))){
       stop("Hypershrinkage should be one of none, ridge, none+constraints, ridge+constraints or mgcv.
               For co-data provided as matrix, hypershrinkage can set automatically.")
@@ -1027,7 +1027,7 @@ ecpc <- function(Y,X,
         }else initgamma <- 1#tauglobal  
         G <- G[Partitions] #number of groups in these partitions
         PenGrps <- PenGrps[unlist(indGrpsGlobal[Partitions]),unlist(indGrpsGlobal[Partitions]),drop=FALSE]
-        eqfun <- function(gamma,b,A,lam)  return(sum(t(Zt[indnot0,])%*%gamma)/length(pen) ) #equality constraint for average prior variance
+        eqfun <- function(gamma,b,A,lam)  return(sum(t(Zt[indnot0,,drop=FALSE])%*%gamma)/length(pen) ) #equality constraint for average prior variance
       }
       #keep local copies of variables to return
       muhat <- muhat[unlist(indGrpsGlobal[Partitions]),Itr]
@@ -1679,6 +1679,7 @@ ecpc <- function(Y,X,
                        }
                      },
                      "hierLasso"={
+                       maxit_gglasso <- 1e+04
                        #Hierarchical overlapping group estimates for given lambda
                        #no target for tau (shrunk to 0)
                        #remove groups that are already set to 0
@@ -1698,10 +1699,15 @@ ecpc <- function(Y,X,
                        
                        ### Fit gglasso for global range of lambda
                        fit2<-lapply(1:nsplits,function(i){
-                         gglasso::gglasso(x=Axtnd[[i]],y=Btauin[[i]][indnot0],group = groupxtnd2, loss="ls",
-                                          intercept = FALSE, pf = rep(1,G2))
+                         capture.output({temp <- gglasso::gglasso(x=Axtnd[[i]],y=Btauin[[i]][indnot0],
+                                                  group = groupxtnd2, loss="ls",
+                                                  intercept = FALSE, pf = rep(1,G2),maxit = 1e+04)})
+                         # temp <- gglasso::gglasso(x=Axtnd[[i]],y=Btauin[[i]][indnot0],
+                         #                                          group = groupxtnd2, loss="ls",
+                         #                                          intercept = FALSE, pf = rep(1,G2),maxit = maxit_gglasso)
+                         return(temp)
                        })
-                       rangelambda2 <- range(sapply(fit2,function(i){range(i$lambda)}))
+                       rangelambda2 <- range(sapply(fit2,function(i){range(i$lambda)}), na.rm=TRUE)
                        
                        #Find grid to search optimal lambda over
                        gammas <- function(lambda2){
@@ -1716,9 +1722,10 @@ ecpc <- function(Y,X,
                          
                          #Hierarchical group lasso estimate for group variances
                          fit2<-gglasso::gglasso(x=Axtnd,y=Btau[indnot0],group = groupxtnd2, loss="ls",
-                                                intercept = FALSE, pf = rep(1,G2),lambda=lambda2)
+                                                intercept = FALSE, pf = rep(1,G2),maxit = maxit_gglasso)
                          gamma <- rep(0,sum(G))
-                         vtilde <- coef(fit2,s=lambda2)[-1]
+                         vtilde <- try(coef(fit2,s=lambda2)[-1],silent=TRUE)
+                         if(class(vtilde)[1]=="try-error") return(gamma) #return 0 vector
                          v<-lapply(groupxtnd,function(g){
                            x<-rep(0,sum(G))
                            x[unlist(INDgrps2)[g]]<-x[unlist(INDgrps2)[g]]+vtilde[g]
@@ -1735,7 +1742,8 @@ ecpc <- function(Y,X,
                          ### Estimate prior gammas for given lambda2 (and mutrgt=0)
                          gammain <- lapply(1:nsplits,function(i){
                            gammain <- rep(0,sum(G))
-                           vtilde <- coef(fit2[[i]],s=lambda2)[-1]
+                           vtilde <- try(coef(fit2[[i]],s=lambda2)[-1],silent=TRUE)
+                           if(class(vtilde)[1]=="try-error") return(gammain) #return 0 vector
                            v<-lapply(groupxtnd,function(g){
                              x<-rep(0,sum(G))
                              x[unlist(INDgrps2)[g]]<-x[unlist(INDgrps2)[g]]+vtilde[g]
@@ -1999,6 +2007,9 @@ ecpc <- function(Y,X,
               
               if(profplotRSS){ #profile plot lambda vs RSS
                 lambdas <- 10^seq(-5,6,length.out=30)
+                if(all(lambdas>rangelambda2[2] | lambdas<rangelambda2[1])){
+                  lambdas <- 10^seq(log(rangelambda2)[1],log(rangelambda2)[2],length.out=30)
+                } 
                 FRSS <- sapply(log(lambdas),RSSlambdatau)
                 profPlot <- plot(log10(lambdas),FRSS,xlab="hyperlambda (log10-scale)",ylab="RSS",
                                  main=paste("Group set ",Partitions,", ",hypershrinkage," hypershrinkage",sep=""))
@@ -2208,7 +2219,7 @@ ecpc <- function(Y,X,
                   gamma <- pmax(0,gammatilde)
                   
                   if(normalise){
-                    Cnorm <- p/sum(c(gamma)%*%Zt[,pen])
+                    Cnorm <- p/sum(c(gamma)%*%Zt[,pen,drop=FALSE])
                     gamma<-gamma*Cnorm
                   }
                 }
@@ -2263,7 +2274,7 @@ ecpc <- function(Y,X,
                 #Three options to solve for partition weights (use only one):
                 #Solve for tau and truncate negative values to 0
                 #browser()
-                cosangle<-t(as.matrix(t(Zt[,pen])%*%weightMatrixTau))%*%as.matrix(t(Zt[,pen])%*%weightMatrixTau)
+                cosangle<-t(as.matrix(t(Zt[,pen,drop=FALSE])%*%weightMatrixTau))%*%as.matrix(t(Zt[,pen,drop=FALSE])%*%weightMatrixTau)
                 cosangle<-abs(t(cosangle/sqrt(diag(cosangle)))/sqrt(diag(cosangle)))
                 cosangle <- cosangle-diag(rep(1,m))
                 if(any(cosangle>0.999)){
@@ -2371,7 +2382,7 @@ ecpc <- function(Y,X,
           Btau <- ((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1)
           #Btau <- pmax(0,((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1))
           
-          A <- as.matrix(((L[x,]%*%R[,x])^2/c(V[x]))%*%t(Zt[,x])*c(tauglobal[datablockNo[x]]))
+          A <- as.matrix(((L[x,]%*%R[,x])^2/c(V[x]))%*%t(Zt[,x,drop=FALSE])*c(tauglobal[datablockNo[x]]))
           
           #other format of A needed for mgcv
           if(hypershrinkage=="mgcv"){
@@ -2404,8 +2415,13 @@ ecpc <- function(Y,X,
                 #-3.3.3|1.2.3 Define function RSSlambdatau, #################################################
                 # using the extra shrinkage penalty function corresponding to parameter hypershrinkage
                 rangelambda2 <- c(10^-5,10^6)
+                sc <- 1
                 switch(hypershrinkage,
                        "ridge+constraints"={
+                         #scale matrix and vector for numerical performance
+                         sc <- sqrt(sum(A^2, na.rm=TRUE))
+                         rangelambda2 <- rangelambda2*sc
+                         
                          name <- paste("Z",Partitions,sep="")
                          M.ineq <- b.ineq <- M.eq <- b.eq <- NULL
                          if("M.ineq"%in%names(paraCon[[name]])){
@@ -2428,10 +2444,11 @@ ecpc <- function(Y,X,
                            # gammas[indnot0] <- pracma::lsqlincon(C=Aext, d=Bext, 
                            #                     A=M.ineq[,indnot0], b=b.ineq, 
                            #                     Aeq=M.eq[,indnot0], beq=b.eq)
-                           gammas[indnot0] <- try(pracma::lsqlincon(C=Aext, d=Bext, 
-                                                                     A=M.ineq[,indnot0], b=b.ineq, 
-                                                                     Aeq=M.eq[,indnot0], beq=b.eq),silent=TRUE)
-                           if(class(gammas)[1]=="try-error") gammas <- rep(0,G)#return(Inf)
+                           temp <- try(pracma::lsqlincon(C=Aext/sc, d=Bext/sc, 
+                                                                   A=M.ineq[,indnot0], b=b.ineq, 
+                                                                   Aeq=M.eq[,indnot0], beq=b.eq),silent=TRUE)
+                           if(class(temp)[1]=="try-error") gammas <- rep(0,G)#return(Inf)
+                           else gammas[indnot0] <- temp
                            return(gammas)
                          }
                          
@@ -2450,7 +2467,7 @@ ecpc <- function(Y,X,
                              
                              #for very large or small lambda, may obtain inconsistent constraints
                              #fix by setting to Inf
-                             temp <- try(pracma::lsqlincon(C=Aextin, d=Bextin, 
+                             temp <- try(pracma::lsqlincon(C=Aextin/sc, d=Bextin/sc, 
                                                                A=M.ineq[,indnot0], b=b.ineq, 
                                                                Aeq=M.eq[,indnot0], beq=b.eq),silent=TRUE)
                              if(class(temp)[1]=="try-error") gammain <- rep(0,G)#return(Inf)
@@ -2465,6 +2482,9 @@ ecpc <- function(Y,X,
                          }
                        },
                        "ridge"={
+                         sc <- sqrt(sum(A^2, na.rm=TRUE))
+                         rangelambda2 <- rangelambda2*sc
+                         
                          name <- paste("Z",Partitions,sep="")
                          S1 <- paraPen[[name]][["S1"]] #generalised ridge penalty matrix
                          
@@ -2472,8 +2492,9 @@ ecpc <- function(Y,X,
                          gammas <- function(lambda2){
                            gammas <- rep(0,G)
                            
-                           Bext <- c(Btau,rep(0,length(indnot0)))
-                           Aext <- rbind(A[,indnot0], lambda2*S1[indnot0,indnot0]) #include ridge penalty
+                           Bext <- c(Btau,rep(0,length(indnot0)))/sc
+                           #include ridge penalty
+                           Aext <- rbind(A[,indnot0], lambda2*S1[indnot0,indnot0])/sc
                            
                            gammas[indnot0] <- solve(t(Aext)%*%Aext,t(Aext)%*%Bext)
                            
@@ -2487,9 +2508,15 @@ ecpc <- function(Y,X,
                            MSEout <- sapply(1:nsplits,function(split){
                              #Compute gamma for in-part
                              gammain <- rep(0,G)
-                             Bextin <- c(Btau[INDin[,split]],rep(0,length(indnot0)))
-                             Aextin <- rbind(A[INDin[,split],indnot0], lambda2*S1[indnot0,indnot0]) #include ridge penalty
-                             gammain[indnot0] <- solve(t(Aextin)%*%Aextin,t(Aextin)%*%Bextin)
+                             Bextin <- c(Btau[INDin[,split]],rep(0,length(indnot0)))/sc
+                             #include ridge penalty
+                             Aextin <- rbind(A[INDin[,split],indnot0], lambda2*S1[indnot0,indnot0])/sc
+                             temp <- try(solve(t(Aextin)%*%Aextin,t(Aextin)%*%Bextin),silent=TRUE)
+                             if(class(temp)[1]=="try-error"){ #for too small lambda, matrix is singular
+                               return(NA)
+                             }else{
+                               gammain[indnot0] <- temp
+                             }
                              #compute MSE on out-part
                              MSE <- mean((A[INDout[,split],]%*%gammain - Btau[INDout[,split]])^2)
                              return(MSE)
@@ -2570,7 +2597,7 @@ ecpc <- function(Y,X,
                   #browser()
                   
                   if(profplotRSS){ #profile plot lambda vs RSS
-                    lambdas <- 10^seq(-5,6,length.out=30)
+                    lambdas <- 10^seq(-5,6,length.out=30)*sc
                     FRSS <- sapply(log(lambdas),RSSlambdatau)
                     profPlot <- plot(log10(lambdas),FRSS,xlab="hyperlambda (log10-scale)",ylab="RSS",
                                      main=paste("Co-data source Z",Partitions,", ",hypershrinkage," hypershrinkage",sep=""))
@@ -2604,6 +2631,8 @@ ecpc <- function(Y,X,
               if(any(is.nan(fixWeightsTau))){
                 switch(hypershrinkage,
                        "none+constraints"={
+                         sc <- sqrt(sum(A^2, na.rm=TRUE))
+                         
                          name <- paste("Z",Partitions,sep="")
                          M.ineq <- b.ineq <- M.eq <- b.eq <- NULL
                          if("M.ineq"%in%names(paraCon[[name]])){
@@ -2616,14 +2645,16 @@ ecpc <- function(Y,X,
                          }
                          
                          gamma <- rep(0,G)
-                         gamma[indnot0] <- pracma::lsqlincon(C=A[,indnot0], d=Btau, 
+                         gamma[indnot0] <- pracma::lsqlincon(C=A[,indnot0]/sc, d=Btau/sc, 
                                                       A=M.ineq[,indnot0], b=b.ineq, 
                                                       Aeq=M.eq[,indnot0], beq=b.eq)
                          gammatilde <- gamma
                        },
                        "none"={
+                         sc <- sqrt(sum(A^2, na.rm=TRUE))
                          gamma <- rep(0,G)
-                         gamma[indnot0] <- solve(t(A[,indnot0])%*%A[,indnot0],t(A[,indnot0])%*%Btau)
+                         gamma[indnot0] <- solve(t(A[,indnot0]/sc)%*%(A[,indnot0]/sc),
+                                                 t(A[,indnot0]/sc)%*%(Btau/sc))
                          gammatilde <- gamma
                        }
                        )
@@ -2848,7 +2879,7 @@ ecpc <- function(Y,X,
       betaold <-rep(1,p) #px1 vector with estimated prior mean for beta_k, k=1,..,p
     }
     if(is.nan(mu)){
-      muhatp <- as.vector(c(partWeightsMuG[,Itr+1]*muhat[,Itr+1])%*%Zt[,pen])*betaold[pen]
+      muhatp <- as.vector(c(partWeightsMuG[,Itr+1]*muhat[,Itr+1])%*%Zt[,pen,drop=FALSE])*betaold[pen]
       muhatp[(1:p)%in%unpen] <- 0
     }else{
       muhatp<-rep(mu,p)
@@ -2863,13 +2894,13 @@ ecpc <- function(Y,X,
         }
       }
       if(all(partWeightsTauG==0)){#set all partition/group weights to 1 (i.e. no difference in partitions/groups)
-        lambdap<-sigmahat/(tauglobal[datablockNo]*as.vector(c(gamma[,1])%*%Zt[,pen]+gamma0)) #target tau/overall
+        lambdap<-sigmahat/(tauglobal[datablockNo]*as.vector(c(gamma[,1])%*%Zt[,pen,drop=FALSE]+gamma0)) #target tau/overall
       }else{
         if(!cont_codata){
-          lambdap<-sigmahat/(tauglobal[datablockNo]*as.vector(c(partWeightsTauG[,Itr+1]*gamma[,Itr+1])%*%Zt[,pen]+gamma0)) #specific penalty for beta_k
+          lambdap<-sigmahat/(tauglobal[datablockNo]*as.vector(c(partWeightsTauG[,Itr+1]*gamma[,Itr+1])%*%Zt[,pen,drop=FALSE]+gamma0)) #specific penalty for beta_k
           lambdap[lambdap<0]<-Inf 
         }else{
-          taup<-tauglobal[datablockNo]*as.vector(c(partWeightsTauG[,Itr+1]*gammatilde[,Itr+1])%*%Zt[,pen]+gamma0)
+          taup<-tauglobal[datablockNo]*as.vector(c(partWeightsTauG[,Itr+1]*gammatilde[,Itr+1])%*%Zt[,pen,drop=FALSE]+gamma0)
           lambdap<-sigmahat/taup
           lambdap[lambdap<0]<-Inf 
         }
