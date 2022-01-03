@@ -54,23 +54,16 @@ A ggplot object.
 \code{\link{visualiseGroupsetweights}} to plot estimated group set weights. and \code{\link{visualiseGroupweights}} to plot estimated group weights.
 }
 \examples{
-# #required libraries
-# library(Matrix)
-# library(dplyr)
-# library(igraph)
-# library(ggplot2)
-# library(ggraph)
+#groups without hierarchical constraints
+groupset <- list("Group1"=c(1:20),"Group2"=c(15,30))
+visualiseGroupset(groupset,c(0.5,2))
 
-# #groups without hierarchical constraints
-# groupset <- list("Group1"=c(1:20),"Group2"=c(15,30))
-# visualiseGroupset(groupset,c(0.5,2))
-
-# #hierarchical groups
-# cont.codata <- seq(0,1,length.out=20) #continuous co-data
-# #only split at lower continous co-data group
-# hierarchicalgroupset <- splitMedian(values=cont.codata,split="lower",minGroupSize=5) 
-# #obtain groups on group level defining the hierarchy
-# groupset.grouplvl <- obtainHierarchy(hierarchicalgroupset) 
-# visualiseGroupset(hierarchicalgroupset, groupset.grouplvl=groupset.grouplvl)
+#hierarchical groups
+cont.codata <- seq(0,1,length.out=20) #continuous co-data
+#only split at lower continous co-data group
+hierarchicalgroupset <- splitMedian(values=cont.codata,split="lower",minGroupSize=5)
+#obtain groups on group level defining the hierarchy
+groupset.grouplvl <- obtainHierarchy(hierarchicalgroupset)
+visualiseGroupset(hierarchicalgroupset, groupset.grouplvl=groupset.grouplvl)
 
 }

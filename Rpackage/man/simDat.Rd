@@ -68,20 +68,17 @@ A list with
 }
 
 \examples{
-# #required libraries
-# library(mvtnorm)
-#
-# n<-10
-# p<-30
-# #simulate beta from two normal distributions; beta_k ~ N(mu_k,tau^2_k)
-# muGrp <- c(0,0.1) #mean (mu_1,mu_2)
-# varGrp <- c(0.05,0.01) #variance (tau^2_1,tau^2_2)
-# #group number of each covariate; first half in group 1, second half in group 2
-# indT <- rep(c(1,2),each=15) 
-#
-# dataLin <- simDat(n, p, n2 = 20, muGrp, varGrp, indT, sigma = 1, model = "linear", 
-#     flag = TRUE)
-# dataLog <- simDat(n, p, n2 = 20, muGrp, varGrp, indT, model = "logistic", 
-#     flag = TRUE)
+n<-10
+p<-30
+#simulate beta from two normal distributions; beta_k ~ N(mu_k,tau^2_k)
+muGrp <- c(0,0.1) #mean (mu_1,mu_2)
+varGrp <- c(0.05,0.01) #variance (tau^2_1,tau^2_2)
+#group number of each covariate; first half in group 1, second half in group 2
+indT <- rep(c(1,2),each=15)
+
+dataLin <- simDat(n, p, n2 = 20, muGrp, varGrp, indT, sigma = 1, model = "linear",
+    flag = TRUE)
+dataLog <- simDat(n, p, n2 = 20, muGrp, varGrp, indT, model = "logistic",
+    flag = TRUE)
 
 }

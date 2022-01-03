@@ -256,7 +256,7 @@ Z3 <- createZforGroupset(groupsetRandom,p=p)
 S1.Z3 <- createS(G=G, categorical = TRUE) #create difference penalty matrix
 Con3 <- createCon(G=dim(Z3)[2], shape="positive") #create constraints
 
- 
+
 ############################
 # Fit ecpc on group sets.. #
 ############################

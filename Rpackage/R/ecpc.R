@@ -3,7 +3,6 @@
 #The method combines empirical Bayes estimation for the group hyperparameters with an extra level of shrinkage
 #to be able to handle various co-data, including overlapping groups, hierarchical groups and continuous co-data.
 
-
 ecpc <- function(Y,X,
                  Z=NULL,paraPen=NULL,paraCon=NULL,intrcpt.bam=TRUE,bam.method="ML",
                  groupsets=NULL,groupsets.grouplvl=NULL,hypershrinkage=NULL, #co-data former
@@ -253,7 +252,6 @@ ecpc <- function(Y,X,
         indGrpsGlobal[[i]] <- (sum(G[1:(i-1)])+1):sum(G[1:i])
       }
     }
-    #stack transposed co-data matrices in one matrix
     Zt <- t(Z[[1]])
     if(m>1){
       for(i in 2:m){
@@ -406,13 +404,13 @@ ecpc <- function(Y,X,
       if(length(lambdas)>1){
         leftout <- multiridge::CVfolds(Y=Y,kfold=fold,nrepeat=3,fixedfolds = FALSE) #Create (repeated) CV-splits of the data
         if(sum((1:p)%in%unpen)>0){
-          jointlambdas <- multiridge::optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
-                                                     X1=X[,(1:p)%in%unpen],intercept=intrcpt,
-                                                     score=ifelse(model == "linear", "mse", "loglik"),model=model)
+          capture.output({jointlambdas <- multiridge::optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
+                                     X1=X[,(1:p)%in%unpen],intercept=intrcpt,
+                                     score=ifelse(model == "linear", "mse", "loglik"),model=model)})
         }else{
-          jointlambdas <- multiridge::optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
-                                                     intercept=intrcpt,
-                                                     score=ifelse(model == "linear", "mse", "loglik"),model=model)
+          capture.output({jointlambdas <- multiridge::optLambdasWrap(penaltiesinit=lambdas, XXblocks=XXbl,Y=Y,folds=leftout,
+                                     intercept=intrcpt,
+                                     score=ifelse(model == "linear", "mse", "loglik"),model=model)})
         }
         
         lambda <- jointlambdas$optpen
@@ -571,34 +569,19 @@ ecpc <- function(Y,X,
                #Estimate sigma^2, lambda and initial estimate for tau^2 (all betas in one group), mu=0 by default
                #NOTE, TD: not yet possible to include unpenalised covariates in MML
                if(grepl("ML",lambda)){ lambda <- NaN}
-               # svdX <- svd(X)
-               # if(any(svdX$d<10^-10)){
-               #   Xfull <- t(svdX$u[,svdX$d>10^-10])%*%X
-               #   Yfull <- t(svdX$u[,svdX$d>10^-10])%*%Y
-               #   Xrowsumfull <- apply(Xfull,1,sum)
-               #   
-               #   XXtfull <- Xfull[,penfctr!=0]%*%t(Xfull[,penfctr!=0])
-               #   
-               #   Xunpenfull <- cbind(Xfull[,penfctr==0]) #if empty vector, no unpenalised and no intercept
-               #   if(intrcpt){
-               #     Xunpenfull <- cbind(Xfull[,penfctr==0],rep(1,dim(Xfull)[1]))
-               #   }
-               #   par <- .mlestlin(Y=Yfull,XXt=XXtfull,Xrowsum=Xrowsumfull,intrcpt=intrcpt,
-               #                    lambda=lambda,sigmasq=sigmasq,mu=mutrgt,tausq=tausq) #use maximum marginal likelihood
-               #   
-               # }else{
-                 Xrowsum <- apply(X,1,sum)
-                 
-                 XXt <- X[,penfctr!=0]%*%t(X[,penfctr!=0])
-                 
-                 Xunpen <- cbind(X[,penfctr==0]) #if empty vector, no unpenalised and no intercept
-                 if(sum(penfctr==0)>0){
-                   Xunpen <- X[,penfctr==0]
-                 }
-                 par <- .mlestlin(Y=Y,XXt=XXt,Xrowsum=Xrowsum,
-                                  lambda=lambda,sigmasq=sigmasq,mu=mutrgt,tausq=tausq) #use maximum marginal likelihood
-               #}
+               Xrowsum <- apply(X,1,sum)
                
+               XXt <- X[,penfctr!=0]%*%t(X[,penfctr!=0])
+               
+               Xunpen <- NULL #if empty vector, no unpenalised and no intercept
+               if(sum(penfctr==0)>0){
+                 Xunpen <- X[,penfctr==0]
+               }
+               
+               par <- .mlestlin(Y=Y,XXt=XXt,Xrowsum=Xrowsum,
+                                intrcpt=FALSE,Xunpen=NULL, #TD: adapt for intercept and Xunpen
+                                lambda=lambda,sigmasq=sigmasq,mu=mutrgt,tausq=tausq) #use maximum marginal likelihood
+
                lambda <- par[1] 
                sigmahat <- par[2] #sigma could be optimised with CV in the end if not known
                muhat[,1] <- par[3] 
@@ -756,7 +739,7 @@ ecpc <- function(Y,X,
              #Cross-validation lambda
              if((!is.nan(compare) & grepl("CV",compare)) | grepl("CV",lambda)){
                if(grepl("glmnet",lambda)){ 
-                 lambdaGLM<-glmnet::cv.glmnet(X,Y,nfolds=fold,alpha=0,family=fml,
+                 lambdaGLM<-glmnet::cv.glmnet(X,as.matrix(Y),nfolds=fold,alpha=0,family=fml,
                                       standardize = FALSE,
                                       penalty.factor=penfctr,keep=TRUE) #alpha=0 for ridge
                }#else if(grepl("penalized",lambda)){ #use penalized to do CV
@@ -825,7 +808,7 @@ ecpc <- function(Y,X,
                muinitp[(1:p)%in%unpen] <- 0
              }
              glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
-                                 lambda = lambda/n*sd_y,family=fml,
+                                 lambda = 2*lambda/n*sd_y,family=fml,
                                  offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], standardize = FALSE,
                                  penalty.factor=penfctr,thresh = 10^-10)
              betasinit <- as.vector(glmGRtrgt$beta)
@@ -968,8 +951,8 @@ ecpc <- function(Y,X,
       muinitp<- as.vector(c(muhat[,1])%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p 
       muinitp[(1:p)%in%unpen] <- 0
       if(model=="cox"){
-        glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
-                        lambda = lambda/n*sd_y,family=fml,
+        glmGRtrgt <- glmnet::glmnet(X,as.matrix(Y),alpha=0,
+                        lambda = lambda/n*sd_y*2,family=fml,
                         offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], standardize = FALSE,
                         penalty.factor=penfctr)
       }else if(model=="logistic"){
@@ -2941,8 +2924,8 @@ ecpc <- function(Y,X,
                                                        x=c(1/sqrt(lambdap[pen]/lambdaoverall))))
       
       if(model=="cox"){
-        glmGR <- glmnet::glmnet(Xacc,Y,alpha=0,
-                        lambda = lambdaoverall/n*sd_y2,family=fml,
+        glmGR <- glmnet::glmnet(Xacc,as.matrix(Y),alpha=0,
+                        lambda = lambdaoverall/n*sd_y2*2,family=fml,
                         offset = X[,!((1:p)%in%unpen)] %*% muhatp[!((1:p)%in%unpen)], standardize = FALSE,
                         penalty.factor=penfctr, thresh=10^-10)
       }else{
@@ -3027,8 +3010,8 @@ ecpc <- function(Y,X,
     Xacc[,pen] <- as.matrix(X[,pen] %*% Matrix::sparseMatrix(i=1:length(pen),j=1:length(pen),
                                                      x=c(1/sqrt(lambdaridge[datablockNo[pen]]/lambdaoverall))))
     if(model=="cox"){
-      glmR <- glmnet::glmnet(Xacc,Y,family=fml,alpha=0,
-                     lambda=lambdaoverall*sd_y/n,standardize = FALSE,
+      glmR <- glmnet::glmnet(Xacc,as.matrix(Y),family=fml,alpha=0,
+                     lambda=lambdaoverall*sd_y/n*2,standardize = FALSE,
                      penalty.factor=penfctr,thresh = 10^-10)
     }else{
       glmR <- glmnet::glmnet(X,Y,family=fml,alpha=0,
@@ -3252,8 +3235,8 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
             return(p - maxselec)
           else {
             if(model=="cox"){
-              glmPost <- glmnet::glmnet(Xacc[,nonzeros],Y,alpha=alpha,
-                              lambda = lam2/(1-alpha),family=fml,
+              glmPost <- glmnet::glmnet(Xacc[,nonzeros],as.matrix(Y),alpha=alpha,
+                              lambda = lam2*2/(1-alpha),family=fml,
                               offset = offset, standardize = FALSE,
                               penalty.factor=penfctr[nonzeros], thresh=10^-10)
             }else if(model %in% c("logistic","linear")){
@@ -3283,8 +3266,8 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
         
         #for found alpha, refit model to see which beta are selected
         if(model=="cox"){
-          glmPost0 <- glmnet::glmnet(Xacc[,nonzeros],Y,alpha=alpha,
-                           lambda = lam2/(1-alpha),family=fml,
+          glmPost0 <- glmnet::glmnet(Xacc[,nonzeros],as.matrix(Y),alpha=alpha,
+                           lambda = lam2*2/(1-alpha),family=fml,
                            offset = offset, standardize = FALSE,
                            penalty.factor=penfctr[nonzeros], thresh=10^-10)
         }else{
@@ -3308,7 +3291,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           #recalibrate overall lambda using cross-validation on selected variables only
           if(grepl("dense2",postselection)){ 
             if(model=="cox"){
-              lambdaGLM<-glmnet::cv.glmnet(Xacc[,whichPostboth, drop=FALSE],Y,alpha=0,
+              lambdaGLM<-glmnet::cv.glmnet(Xacc[,whichPostboth, drop=FALSE],as.matrix(Y),alpha=0,
                                    family=fml,offset = offset ,standardize = FALSE,
                                    penalty.factor=penfctr[whichPostboth], thresh=10^-10) #alpha=0 for ridge
               lam2<-lambdaGLM$lambda.min
@@ -3322,7 +3305,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           
           #Recompute beta using only selected beta and group ridge penalty (without lasso penalty)
           if(model=="cox"){
-            glmPost <- glmnet::glmnet(Xacc[,whichPostboth, drop=FALSE],Y,alpha=0,
+            glmPost <- glmnet::glmnet(Xacc[,whichPostboth, drop=FALSE],as.matrix(Y),alpha=0,
                             lambda = lam2,family=fml,
                             offset = offset ,standardize = FALSE,
                             penalty.factor=penfctr[whichPostboth], thresh=10^-10)
@@ -3346,7 +3329,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           #output$offsetPost <- offset #offset used in Post
         }else{# if(grepl("sparse",postselection)){ #refit standard ridge with newly cross-validated lambda
           if(model=="cox"){
-            lambdaGLM<-glmnet::cv.glmnet(X[,whichPostboth, drop=FALSE],Y,alpha=0,family=fml,
+            lambdaGLM<-glmnet::cv.glmnet(X[,whichPostboth, drop=FALSE],as.matrix(Y),alpha=0,family=fml,
                                  standardize = FALSE,penalty.factor=penfctr[whichPostboth]) #alpha=0 for ridge
             lam2<-lambdaGLM$lambda.min
           }else{
@@ -3355,7 +3338,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
             lam2<-lambdaGLM$lambda.min
           }
           if(model=="cox"){
-            glmPost <- glmnet::glmnet(X[,whichPostboth, drop=FALSE],Y,alpha=0,
+            glmPost <- glmnet::glmnet(X[,whichPostboth, drop=FALSE],as.matrix(Y),alpha=0,
                             lambda = lam2,family=fml,
                             offset = offset ,standardize = FALSE,
                             penalty.factor=penfctr[whichPostboth], thresh=10^-10)
@@ -3654,8 +3637,8 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
                                                            x=c(1/sqrt(lambdap[pen]/lambdaoverall))) )
 
           if(model=="cox"){
-            glmPost <- glmnet::glmnet(Xacc[,indAll, drop=FALSE],Y,alpha=0,
-                            lambda = lam2,family=fml,
+            glmPost <- glmnet::glmnet(Xacc[,indAll, drop=FALSE],as.matrix(Y),alpha=0,
+                            lambda = lam2*2,family=fml,
                             offset = offset ,standardize = FALSE,
                             penalty.factor=penfctr[indAll], thresh=10^-10)
           }else{
@@ -3669,7 +3652,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           betaPost[indPost] <- c(1/sqrt(lambdap[indPost]/lambdaoverall)) * betaPost[indPost] + muhatp[indPost]
         }else{ #sparse; refit with newly cross-validated lambda
           if(model=="cox"){
-            lambdaGLM<-glmnet::cv.glmnet(X[,indAll, drop=FALSE],Y,alpha=0,family=fml,
+            lambdaGLM<-glmnet::cv.glmnet(X[,indAll, drop=FALSE],as.matrix(Y),alpha=0,family=fml,
                                  standardize = FALSE,penalty.factor=penfctr[indAll]) #alpha=0 for ridge
             lam2<-lambdaGLM$lambda.min
           }else{
@@ -3678,7 +3661,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
             lam2<-lambdaGLM$lambda.min
           }
           if(model=="cox"){
-            glmPost <- glmnet::glmnet(X[,indAll, drop=FALSE],Y,alpha=0,
+            glmPost <- glmnet::glmnet(X[,indAll, drop=FALSE],as.matrix(Y),alpha=0,
                             lambda = lam2,family=fml,
                             offset = offset ,standardize = FALSE,
                             penalty.factor=penfctr[indAll], thresh=10^-10)
@@ -3727,7 +3710,6 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
     }
     
   }
-  
   #reshape output data
   res<-list()
   size <- length(maxsel2)
@@ -3747,8 +3729,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
 
 #Produce balanced folds----
 produceFolds <- function(nsam,outerfold,response,model=c("logistic", "cox", "other"),
-                         balance=TRUE,fixedfolds=FALSE){
-  if(fixedfolds) set.seed(3648310) #else set.seed(NULL)
+                         balance=TRUE){
   if(length(model)>1){
     if(all(is.element(response,c(0,1))) || is.factor(response)){
       model <- "logistic" 
@@ -3912,7 +3893,7 @@ createGroupset <- function(values,index=NULL,grsize=NULL,ngroup=10,
 
 
 #Estimate maximum marginal likelihood estimates for linear model----
-.mlestlin <- function(Y,XXt,Xrowsum,lambda=NaN,sigmasq=NaN,mu=NaN,tausq=NaN){
+.mlestlin <- function(Y,XXt,Xrowsum,Xunpen=NULL,lambda=NaN,sigmasq=NaN,mu=NaN,tausq=NaN,intrcpt=TRUE){
   #lambda,sigmasq,mu are possibly fixed
   maxv <- var(Y)
   #if(intrcpt) Y <- Y - mean(Y)
@@ -3926,6 +3907,7 @@ createGroupset <- function(values,index=NULL,grsize=NULL,ngroup=10,
   if(prms=='s'||prms=='sm'){sigmasq <- lambda*tausq; prms <- gsub("s","",prms)}
   switch(prms,
          'lsmt'={ #lambda, sigma, mu, tau unknown
+           #TD: add unpenalised covariates
            sim2 = function(ts){
              tausq<-ts[1];sigmasq<-ts[2];mu<-ts[3]
              varY <- XXt * exp(tausq) + diag(rep(1,n))*exp(sigmasq)
@@ -3938,6 +3920,7 @@ createGroupset <- function(values,index=NULL,grsize=NULL,ngroup=10,
            mu <- op$par[3]; lambda <- sigmasq/tausq
          },
          'lsm'={ #lambda, sigma, mu unknown, tau known
+           #TD: add unpenalised covariates
            sim2 = function(ts){
              sigmasq<-ts[1];mu<-ts[2]
              varY <- XXt * exp(tausq) + diag(rep(1,n))*exp(sigmasq)
@@ -3950,19 +3933,86 @@ createGroupset <- function(values,index=NULL,grsize=NULL,ngroup=10,
            mu <- op$par[2]; lambda <- sigmasq/tausq
          },
          'lst'={ #lambda, sigma, tau unknown, mu known
+           minsig <- 0#10^-5*maxv
            sim2 = function(ts){
-             tausq<-ts[1];sigmasq<-ts[2]
-             varY <- XXt * exp(tausq) + diag(rep(1,n))*exp(sigmasq)
-             meanY <- mu*Xrowsum 
+             tausq<-exp(ts[1]);sigmasq<- minsig+exp(ts[2])
+             varY <- XXt * tausq + diag(rep(1,n))*sigmasq
+             meanY <- mu*Xrowsum
+
+             #compute unpenalised variable estimates given lambda, sigma, tausq
+             #add this to meanY
+             if(length(dim(Xunpen))>0 | intrcpt){
+               XtDinvX <- multiridge::SigmaFromBlocks(XXblocks = list(XXt),sigmasq/tausq)
+               if(intrcpt) Xunpen <- cbind(Xunpen,rep(1,n))
+               if(intrcpt && dim(Xunpen)[2]==1){
+                 betaunpenML <- sum(Y)/n
+               }else{
+                 temp <- solve(XtDinvX+diag(rep(1,n)),Xunpen)
+                 betaunpenML <- solve(t(Xunpen)%*%temp , t(temp)%*%Y)
+               }
+               meanY <- meanY + Xunpen%*%betaunpenML
+             }
+
              mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=TRUE)
              return(mlk)
            }
            op <- optim(c(log(0.01),log(maxv)),sim2)
-           tausq <- exp(op$par[1]); sigmasq <- exp(op$par[2])
+           tausq <- exp(op$par[1]); sigmasq <- minsig + exp(op$par[2])
            lambda <- sigmasq/tausq
-
+           
+           # #optimise over lambda, and sigmahat given lambda
+           # minlam <- 10^-3
+           # sim2 = function(ts){
+           #   lambda<-minlam + exp(ts[1])
+           #   
+           #   meanY <- mu*Xrowsum 
+           #   
+           #   #MMLE sigma known analytically given lambda
+           #   if(length(dim(Xunpen))>0 | intrcpt){
+           #     XtDinvX <- multiridge::SigmaFromBlocks(XXblocks = list(XXt),lambda)
+           #     if(intrcpt) Xunpen <- cbind(Xunpen,rep(1,n))
+           #     if(intrcpt && dim(Xunpen)[2]==1){
+           #       betaunpenML <- sum(Y)/n
+           #     }else{
+           #       temp <- solve(XtDinvX+diag(rep(1,n)),Xunpen)
+           #       betaunpenML <- solve(t(Xunpen)%*%temp , t(temp)%*%Y)
+           #     }
+           #     sigmasq <- c(t(Y-Xunpen%*%betaunpenML)%*%solve(XtDinvX+diag(rep(1,n)),Y-Xunpen%*%betaunpenML)/n)
+           #     meanY <- meanY + Xunpen%*%betaunpenML
+           #   }else{
+           #     sigmasq <- c(t(Y)%*%solve(XtDinvX+diag(rep(1,n)),Y)/n)
+           #   }
+           #   tausq <- sigmasq/lambda
+           #   varY <- XXt * tausq + diag(rep(1,n))*sigmasq
+           #   
+           #   mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=TRUE)
+           #   return(mlk)
+           # }
+           # op <- optim(c(log(0.01)),sim2,method="Brent",lower=log(1e-5),upper=log(10^6))
+           # lambda <- minlam + exp(op$par[1])
+           # #MMLE sigma known analytically given lambda
+           # if(length(dim(Xunpen))>0 | intrcpt){
+           #   XtDinvX <- multiridge::SigmaFromBlocks(XXblocks = list(XXt),lambda)
+           #   if(intrcpt) Xunpen <- cbind(Xunpen,rep(1,n))
+           #   if(intrcpt && dim(Xunpen)[2]==1){
+           #     betaunpenML <- sum(Y)/n
+           #   }else{
+           #     temp <- solve(XtDinvX+diag(rep(1,n)),Xunpen)
+           #     betaunpenML <- solve(t(Xunpen)%*%temp , t(temp)%*%Y)
+           #   }
+           #   sigmasq <- c(t(Y-Xunpen%*%betaunpenML)%*%solve(XtDinvX+diag(rep(1,n)),Y-Xunpen%*%betaunpenML)/n)
+           # }else{
+           #   sigmasq <- c(t(Y)%*%solve(XtDinvX+diag(rep(1,n)),Y)/n)
+           # }
+           # tausq <- sigmasq/lambda
+           
+           # lambdaseq <- 10^seq(-5,6,length.out=30)
+           # MLs <- sapply(log(lambdaseq),sim2)
+           # plot(log(lambdaseq),MLs)
+           # abline(v=log(lambda),col="red")
          },
          'lmt'={ #lambda, tau, mu unknown, sigma known
+           #TD: add unpenalised variables
            sim2 = function(ts){
              tausq<-ts[1]; mu <- ts[2]
              varY <- XXt * exp(tausq) + diag(rep(1,n))*sigmasq
@@ -3976,13 +4026,28 @@ createGroupset <- function(values,index=NULL,grsize=NULL,ngroup=10,
          },
          'lt'={ #lambda, tau unknown, sigma, mu known
            sim2 = function(ts){
-             tausq<-ts[1];
-             varY <- XXt * exp(tausq) + diag(rep(1,n))*sigmasq
+             tausq<-exp(ts[1]);
+             varY <- XXt * tausq + diag(rep(1,n))*sigmasq
              meanY <- mu*Xrowsum 
+             
+             #compute unpenalised variable estimates given lambda, sigma, tausq
+             #add this to meanY
+             if(length(dim(Xunpen))>0 | intrcpt){
+               XtDinvX <- multiridge::SigmaFromBlocks(XXblocks = list(XXt),sigmasq/tausq)
+               if(intrcpt) Xunpen <- cbind(Xunpen,rep(1,n))
+               if(intrcpt && dim(Xunpen)[2]==1){
+                 betaunpenML <- sum(Y)/n
+               }else{
+                 temp <- solve(XtDinvX+diag(rep(1,n)),Xunpen)
+                 betaunpenML <- solve(t(Xunpen)%*%temp , t(temp)%*%Y)
+               }
+               meanY <- meanY + Xunpen%*%betaunpenML
+             }
+             
              mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=TRUE)
              return(mlk)
            }
-           op <- optim(c(log(0.01)),sim2,method="Brent",lower=log(1e-10),upper=log(100))
+           op <- optim(c(log(0.01)),sim2,method="Brent",lower=log(1e-5),upper=log(10^6))
            #op <- optimize(sim2,c(-100,100))
            #op <- optim(c(log(0.01)),sim2)
            #browser()
@@ -4005,15 +4070,47 @@ createGroupset <- function(values,index=NULL,grsize=NULL,ngroup=10,
            #mlests <- c(sigmasq,sigmasq/lambda)
          },
          'st'={ #sigma, tau unknown, lambda, mu known
-           sim2 = function(ts){
-             tausq<-log(exp(ts)/lambda); sigmasq<-ts
-             varY <- XXt * exp(tausq) + diag(rep(1,n))*exp(sigmasq)
-             meanY <- mu*Xrowsum 
-             mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=TRUE)
-             return(mlk)
+           #MMLE sigma known analytically
+           if(length(dim(Xunpen))>0 | intrcpt){
+             XtDinvX <- multiridge::SigmaFromBlocks(XXblocks = list(XXt),lambda)
+             if(intrcpt) Xunpen <- cbind(Xunpen,rep(1,n))
+             if(intrcpt && dim(Xunpen)[2]==1){
+               betaunpenML <- sum(Y)/n
+             }else{
+               temp <- solve(XtDinvX+diag(rep(1,n)),Xunpen)
+               betaunpenML <- solve(t(Xunpen)%*%temp , t(temp)%*%Y)
+             }
+             sigmasq <- c(t(Y-Xunpen%*%betaunpenML)%*%solve(XtDinvX+diag(rep(1,n)),Y-Xunpen%*%betaunpenML)/n)
+           }else{
+             sigmasq <- c(t(Y)%*%solve(XtDinvX+diag(rep(1,n)),Y)/n)
            }
-           op <- optim(c(log(maxv)),sim2,method="Brent",lower=log(1e-5),upper=log(2*maxv))
-           tausq <- exp(op$par[1])/lambda; sigmasq <- exp(op$par[1])
+           tausq <- sigmasq/lambda
+           
+           # #or minimise numerically:
+           # sim2 = function(ts){
+           #   tausq<-exp(ts)/lambda; sigmasq<-exp(ts)
+           #   varY <- XXt * tausq + diag(rep(1,n))*sigmasq
+           #   meanY <- mu*Xrowsum 
+           #   
+           #   #compute unpenalised variable estimates given lambda, sigma, tausq
+           #   #add this to meanY
+           #   if(length(dim(Xunpen))>0 | intrcpt){
+           #     XtDinvX <- multiridge::SigmaFromBlocks(XXblocks = list(XXt),lambda)
+           #     if(intrcpt) Xunpen <- cbind(Xunpen,rep(1,n))
+           #     if(intrcpt && dim(Xunpen)[2]==1){
+           #       betaunpenML <- sum(Y)/n
+           #     }else{
+           #       temp <- solve(XtDinvX+diag(rep(1,n)),Xunpen)
+           #       betaunpenML <- solve(t(Xunpen)%*%temp , t(temp)%*%Y)
+           #     }
+           #     meanY <- meanY + Xunpen%*%betaunpenML
+           #   }
+           #   
+           #   mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=TRUE)
+           #   return(mlk)
+           # }
+           # op <- optim(c(log(maxv)),sim2,method="Brent",lower=log(1e-5),upper=log(2*maxv))
+           # tausq <- exp(op$par[1])/lambda; sigmasq <- exp(op$par[1])
            
            # sigmaseq <- 10^seq(-1,log10(5*maxv),length.out=30)
            # MLs <- sapply(log(sigmaseq),sim2)
@@ -4022,13 +4119,28 @@ createGroupset <- function(values,index=NULL,grsize=NULL,ngroup=10,
          },
          'ls'={ #lambda, sigma unknown, tau, mu known
            sim2 = function(ts){
-             sigmasq<-ts[1];
-             varY <- XXt * exp(tausq) + diag(rep(1,n))*sigmasq
+             sigmasq<-exp(ts[1]);
+             varY <- XXt * tausq + diag(rep(1,n))*sigmasq
              meanY <- mu*Xrowsum 
+             
+             #compute unpenalised variable estimates given lambda, sigma, tausq
+             #add this to meanY
+             if(length(dim(Xunpen))>0 | intrcpt){
+               XtDinvX <- multiridge::SigmaFromBlocks(XXblocks = list(XXt),sigmasq/tausq)
+               if(intrcpt) Xunpen <- cbind(Xunpen,rep(1,n))
+               if(intrcpt && dim(Xunpen)[2]==1){
+                 betaunpenML <- sum(Y)/n
+               }else{
+                 temp <- solve(XtDinvX+diag(rep(1,n)),Xunpen)
+                 betaunpenML <- solve(t(Xunpen)%*%temp , t(temp)%*%Y)
+               }
+               meanY <- meanY + Xunpen%*%betaunpenML
+             }
+             
              mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=TRUE)
              return(mlk)
            }
-           op <- optim(c(log(maxv)),sim2,method="Brent",lower=log(1e-10),upper=log(2*maxv))
+           op <- optim(c(log(maxv)),sim2,method="Brent",lower=log(1e-6),upper=log(2*maxv))
            sigmasq <- exp(op$par[1])
            lambda <- sigmasq/tausq
          },
@@ -4160,7 +4272,7 @@ cv.ecpc <- function(Y,X,type.measure=c("MSE", "AUC"),outerfolds=10,
   n <- dim(X)[1]
   p <- dim(X)[2]
   if(is.numeric(outerfolds)){
-    folds2<-produceFolds(n,outerfolds,Y,balance=balance,model=model,fixedfolds = FALSE) #produce folds balanced in response
+    folds2<-produceFolds(n,outerfolds,Y,balance=balance,model=model) #produce folds balanced in response
   }else{
     folds2 <- outerfolds
   }

@@ -56,33 +56,31 @@ Yan, X., Bien, J. et al. (2017). Hierarchical sparse modeling: A choice of two g
 Jacob, L., Obozinski, G. and Vert, J.-P. (2009). Group lasso with overlap and graph lasso. In: Proceedings of the 26th annual international conference on machine learning 433-440. ACM.
 }
 \examples{
-# #####################
-# # Simulate toy data #
-# #####################
-# p<-300 #number of covariates
-# n<-100 #sample size training data set
-# n2<-100 #sample size test data set
-# 
-# #simulate all betas i.i.d. from beta_k~N(mean=0,sd=sqrt(0.1)):
-# muBeta<-c(0,0) #prior mean
-# varBeta<-c(0.0001,0.1) #prior variance
-# #vector with group numbers all 1 (all simulated from same normal distribution)
-# indT1<-rep(c(1,2),each=p/2) 
-# 
-# #simulate test and training data sets:
-# Dat<-simDat(n,p,n2,muBeta,varBeta,indT1,sigma=1,model='linear') 
-# str(Dat) #Dat contains centered observed data, response data and regression coefficients
-# 
-# #hierarchical grouping: e.g. covariates (p/4+1):(p/2) can only be selected when 
-# #covariates 1:(p/4) are selected
-# groupset <- list(1:(p/2),(p/2+1):p,1:(p/4),(3*p/4+1):p)
-# 
-# #Fit hierarchical lasso, perform CV to find optimal lambda penalty
-# res <- hierarchicalLasso(X=Dat$Xctd,Y=Dat$Y,groupset = groupset )
-# res$lambdarange
-# plot(res$betas)
-# 
-# #Fit hierarchical lasso for fixed lambda
-# res2 <- hierarchicalLasso(X=Dat$Xctd,Y=Dat$Y,groupset = groupset,lambda=res$lambdarange[2] )
-# plot(res2$betas)
+# Simulate toy data 
+p<-60 #number of covariates
+n<-30 #sample size training data set
+n2<-100 #sample size test data set
+
+#simulate all betas i.i.d. from beta_k~N(mean=0,sd=sqrt(0.1)):
+muBeta<-c(0,0) #prior mean
+varBeta<-c(0.0001,0.1) #prior variance
+#vector with group numbers all 1 (all simulated from same normal distribution)
+indT1<-rep(c(1,2),each=p/2)
+
+#simulate test and training data sets:
+Dat<-simDat(n,p,n2,muBeta,varBeta,indT1,sigma=1,model='linear')
+str(Dat) #Dat contains centered observed data, response data and regression coefficients
+
+#hierarchical grouping: e.g. covariates (p/4+1):(p/2) can only be selected when
+#covariates 1:(p/4) are selected
+groupset <- list(1:(p/2),(p/2+1):p,1:(p/4),(3*p/4+1):p)
+
+#Fit hierarchical lasso, perform CV to find optimal lambda penalty
+res <- hierarchicalLasso(X=Dat$Xctd,Y=Dat$Y,groupset = groupset )
+res$lambdarange
+plot(res$betas)
+
+#Fit hierarchical lasso for fixed lambda
+res2 <- hierarchicalLasso(X=Dat$Xctd,Y=Dat$Y,groupset = groupset,lambda=res$lambdarange[2] )
+plot(res2$betas)
 }
