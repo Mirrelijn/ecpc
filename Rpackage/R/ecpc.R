@@ -2364,18 +2364,43 @@ ecpc <- function(Y,X,
           x<-setdiff(x,zeroV)
           Btau <- ((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1)
           #Btau <- pmax(0,((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1))
-          
-          A <- as.matrix(((L[x,]%*%R[,x])^2/c(V[x]))%*%t(Zt[,x,drop=FALSE])*c(tauglobal[datablockNo[x]]))
+ 
+          A <- sapply(1:dim(Zt)[1],function(j){ #for each co-data variable
+                  if(j%in%ind0) return(rep(NaN,p))
+                  #compute row with gamma_{xy}
+                  sapply(x,function(k){
+                    sum(t(c(1/V[k])*L[k,,drop=FALSE])%*%L[k,,drop=FALSE]*
+                          (R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE])*c(Zt[j,x])*
+                                                 c(tauglobal[datablockNo[x]]))),na.rm=TRUE)
+                  })
+                }, simplify="array") #matrix of size pxsum(G)
+          #same as below, but this one above is more memory-efficient:
+          #A2 <- as.matrix(((L[x,]%*%R[,x])^2/c(V[x]))%*%t(Zt[,x,drop=FALSE])*c(tauglobal[datablockNo[x]]))
           
           #other format of A needed for mgcv
           if(hypershrinkage=="mgcv"){
             Alist <- lapply(Z,function(Zi){
-              A <- as.matrix(((L[x,]%*%R[,x])^2/c(V[x]))%*%Zi[x,]*c(tauglobal[datablockNo[x]]))
+              A <- sapply(1:dim(Zi)[2],function(j){ #for each co-data variable
+                #compute row with gamma_{xy}
+                sapply(x,function(k){
+                  sum(t(c(1/V[k])*L[k,,drop=FALSE])%*%L[k,,drop=FALSE]*
+                        (R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE])*c(Zi[x,j])*
+                                               c(tauglobal[datablockNo[x]]))),na.rm=TRUE)
+                })
+              }, simplify="array") #matrix of size pxsum(G)
+              #same as below, but more memory-efficient:
+              #A <- as.matrix(((L[x,]%*%R[,x])^2/c(V[x]))%*%Zi[x,]*c(tauglobal[datablockNo[x]]))
               return(A)
             })
             names(Alist) <- paste("Z",1:length(Alist),sep="")
-            Aintrcpt <- as.matrix(((L[pen,]%*%R[,pen])^2/c(V[pen]))%*%rep(1,length(pen))*
-                                    c(tauglobal[datablockNo[x]]))
+            Aintrcpt <- sapply(x,function(k){
+                sum(t(c(1/V[k])*L[k,,drop=FALSE])%*%L[k,,drop=FALSE]*
+                      (R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE])*c(rep(1,length(x)))*
+                                             c(tauglobal[datablockNo[x]]))),na.rm=TRUE)
+              })
+            #same as below, but more memory-efficient:
+            # Aintrcpt <- as.matrix(((L[pen,]%*%R[,pen])^2/c(V[pen]))%*%rep(1,length(pen))*
+            #                         c(tauglobal[datablockNo[x]]))
           }
           
           if(cont_codata & !grepl("none",hypershrinkage) & length(indnot0)>1){ 
