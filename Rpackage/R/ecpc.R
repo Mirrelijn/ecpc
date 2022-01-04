@@ -3322,7 +3322,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
 
         if(sum(whichPostboth)<=1){
           warning("At least two variables should be selected for glmnet")
-          return(list(betaPost=NULL,whichPost=NULL,a0=NULL))
+          return(list(betaPost=betaPost0,whichPost=NULL,a0=glmPost0$a0))
         }
         if(grepl("dense",postselection)){ #use weighted penalty
           if(!all(muhatp==0)) offset <- X[,whichPostboth & (1:p)%in%pen, drop=FALSE] %*% muhatp[whichPostboth & (1:p)%in%pen, drop=FALSE]
