@@ -22,7 +22,7 @@ postselection = "elnet,dense", maxsel = 10,
 lambda = NULL, fold = 10, sigmasq = NaN, w = NaN, 
 nsplits = 100, weights = TRUE, profplotRSS = FALSE, Y2 = NaN, X2 = NaN, 
 compare = TRUE, mu = FALSE, normalise = FALSE, silent = FALSE,
-datablocks = NULL)%,standardise_Y=FALSE)
+datablocks = NULL, est_beta_method=c("glmnet","multiridge"))%,standardise_Y=FALSE)
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
@@ -143,6 +143,9 @@ Should output messages be suppressed (default FALSE)?
   \item{datablocks}{
 %%     ~~Describe \code{normalise} here~~
 (optional) for multiple data types, the corresponding blocks of data may be given in datablocks; a list of B vectors of the indices of covariates in `X' that belong to each of the B data blocks. Unpenalised covariates should not be given as seperate block, but can be omitted or included in blocks with penalised covariates. Each datatype obtains a datatype-specific `tauglobal' as in multiridge.
+}
+  \item{est_beta_method}{
+  Package used for estimating regression coefficients, either "glmnet" or "multiridge".
 }
 %  \item{standardise_Y}{
 %%     ~~Describe \code{normalise} here~~

@@ -12,7 +12,7 @@ ecpc <- function(Y,X,
                  nsplits=100,weights=TRUE,profplotRSS=FALSE,
                  Y2=NaN,X2=NaN,compare=TRUE,
                  mu=FALSE,normalise=FALSE,silent=FALSE,
-                 datablocks=NULL#,standardise_Y=FALSE
+                 datablocks=NULL,est_beta_method=c("glmnet","multiridge")#,standardise_Y=FALSE
                  #nIt=1,betaold=NaN
                  ){
   #-1. Description input --------------------------------------------------------------------------
@@ -66,6 +66,15 @@ ecpc <- function(Y,X,
   nIt=1;
   betaold=NaN
   gammaForm=FALSE #co-data with bam
+  minlam <- 0
+  if(!all(est_beta_method %in% c("glmnet", "multiridge"))){
+    warning("Estimation method for betas should be either glmnet or multiridge, set to glmnet")
+    est_beta_method <- "glmnet"
+  }
+  if(length(est_beta_method)>1){
+    est_beta_method <- "glmnet"
+  }
+
   #-2. Set-up variables ---------------------------------------------------------------------------
   n <- dim(X)[1] #number of samples
   p <- dim(X)[2] #number of covariates 
@@ -483,11 +492,9 @@ ecpc <- function(Y,X,
     for(i in 1:length(datablocks)){
       betasinit[datablocks[[i]][!(datablocks[[i]]%in%unpen)]] <- betas[[1+i]]
     }  
-    
     muinitp <- rep(0,p) #TD: with offset for mu
     
     rm(betas)
-    
     #compare multiridge
     if(compare!=FALSE){
       lambdaridge <- lambda
@@ -603,14 +610,62 @@ ecpc <- function(Y,X,
                muinitp <- as.vector(c(muhat[,1])%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p (0 for unpenalised covariates) 
                muinitp[(1:p)%in%unpen] <- 0
              }
-             glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
-                                 lambda = lambda/n*sd_y,family=fml,
+             if(est_beta_method=="glmnet"){
+               glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
+                                           #lambda = lambda/n*sd_y,
+                                           family=fml,
+                                           offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], 
+                                           intercept = intrcpt, standardize = FALSE,
+                                           penalty.factor=penfctr)
+               #minlam <- min(glmGRtrgt$lambda)*n/sd_y
+               if(lambda < minlam){
+                 warning("Estimated lambda value found too small, set to minimum to for better numerical performance")
+                 lambda <- minlam
+                 lambdap <- rep(lambda,p) #px1 vector with penalty for each beta_k, k=1,..,p
+                 lambdap[(1:p)%in%unpen] <- 0
+                 
+                 #re-estimate sigma and tau_global for new lambda value
+                 Xrowsum <- apply(X,1,sum)
+                 XXt <- X[,penfctr!=0]%*%t(X[,penfctr!=0])
+                 par <- .mlestlin(Y=Y,XXt=XXt,Xrowsum=Xrowsum,
+                                  intrcpt=FALSE,Xunpen=NULL, #TD: adapt for intercept and Xunpen
+                                  lambda=lambda,sigmasq=NaN,mu=mutrgt,tausq=tausq) #use maximum marginal likelihood
+                 sigmahat <- par[2] #sigma could be optimised with CV in the end if not known
+                 gamma[,1] <- par[4]
+                 tauglobal<- par[4] #set target group variance (overall variance if all covariates in one group)
+               }
+               #betasinit <- as.vector(glmGRtrgt$beta)
+               betasinit <- coef(glmGRtrgt,s=lambda/n*sd_y,thresh = 10^-10, exact=TRUE,
+                                 x=X,y=Y,
+                                 family=fml,
                                  offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], 
-                                 intercept = intrcpt, standardize = FALSE,
-                                 penalty.factor=penfctr,thresh = 10^-10)
-             betasinit <- as.vector(glmGRtrgt$beta)
-             betasinit[!((1:p)%in%unpen)] <- betasinit[!((1:p)%in%unpen)] + muinitp[!((1:p)%in%unpen)]
-             intrcptinit <- glmGRtrgt$a0
+                                 intercept = intrcpt,
+                                 penalty.factor=penfctr)[-1]
+               betasinit[!((1:p)%in%unpen)] <- betasinit[!((1:p)%in%unpen)] + muinitp[!((1:p)%in%unpen)]
+               #intrcptinit <- glmGRtrgt$a0
+               intrcptinit <- coef(glmGRtrgt,s=lambda/n*sd_y,thresh = 10^-10, exact=TRUE,
+                                   x=X,y=Y,
+                                   family=fml,
+                                   offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], 
+                                   intercept = intrcpt,
+                                   penalty.factor=penfctr)[1]
+             }else{ #use multiridge package
+               XXbl <- list(X[,penfctr!=0]%*%t(X[,penfctr!=0]))
+               #Compute betas
+               XXT <- multiridge::SigmaFromBlocks(XXbl,penalties=lambda) #create nxn Sigma matrix = sum_b [lambda_b)^{-1} X_b %*% t(X_b)]
+               if(sum((1:p)%in%unpen)>0){
+                 fit <- multiridge::IWLSridge(XXT,Y=Y, model=model,intercept=intrcpt,X1=X[,(1:p)%in%unpen]) #Fit. fit$etas contains the n linear predictors
+               }else{
+                 fit <- multiridge::IWLSridge(XXT,Y=Y, model=model,intercept=intrcpt) #Fit. fit$etas contains the n linear predictors
+               }
+               
+               betas <- multiridge::betasout(fit, Xblocks=list(X[,penfctr!=0]), penalties=lambda) #Find betas.
+               intrcptinit <- c(betas[[1]][1]) #intercept
+               betasinit <- rep(0,p) 
+               betasinit[(1:p)%in%unpen] <- betas[[1]][-1] #unpenalised variables
+               betasinit[!((1:p)%in%unpen)] <- betas[[2]]
+               rm(betas)
+             }
              
            },
            'logistic'={
@@ -677,40 +732,6 @@ ecpc <- function(Y,X,
                } 
                #print(lambda)
              }
-             #Use approximate ML criterium initial lambda (tausq) estimate 
-             if((!is.nan(compare) & grepl("ML",compare)) | grepl("ML",lambda)){
-               #Approximate derivative dML/dtausq
-               dlMLdtau <- function(param,svdX,Y,UU,rankXXt){
-                 tausq <- param[1]
-                 p0 <- param[2]
-                 
-                 dlMLdtau <- sum(sapply(1:rankXXt,function(j){
-                   T1 <- c(Y-p0)%*%UU[[j]]%*%c(Y-p0) *svdX$d[j]^2
-                   T2<- p0*(1-p0)*svdX$d[j]^2*(p0*(1-p0)*svdX$d[j]^2*tausq + 1)
-                   T3 <- (p0*(1-p0)*svdX$d[j]^2*tausq + 1)^2
-                   return(0.5*(T1-T2)/T3)
-                 })
-                 )
-                 return(dlMLdtau)
-               }
-               #some variables needed
-               svdX<-svd(X)
-               svdX$dmin <- 1/svdX$d
-               svdX$dmin[svdX$d < 10^-12] <- 0
-               rankXXt <- length(svdX$dmin)-sum(svdX$dmin==0)
-               U1<-svdX$u[,1:rankXXt]
-               UU <- lapply(1:rankXXt,function(j){
-                 U1[,j]%*%t(U1[,j])
-               }
-               )
-               #fix intercept
-               p0hat <- sum(Y)/length(Y)
-               
-               #find tausq that minimises dlML/dtausq
-               opt <- optim((1+p0hat)/(p*p0hat^3),function(x){dlMLdtau(c(x,p0hat),svdX,Y,UU,rankXXt)})
-               if( (!is.nan(compare) & grepl("ML",compare)) | (!is.nan(compare) & compare==TRUE)) lambdaridge <- 1/opt$par
-               if(grepl("ML",lambda)) lambda <- 1/opt$par
-             }
              gamma[,1] <- 1/lambda
              tauglobal <- 1/lambda
              sigmahat <- 1 #sigma not in model for logistic: set to 1
@@ -727,13 +748,55 @@ ecpc <- function(Y,X,
                muinitp <- as.vector(c(muhat[,1])%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p (0 for unpenalised covariates) 
                muinitp[(1:p)%in%unpen] <- 0
              }
-             glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
-                                 lambda = lambda/n*sd_y,family=fml,
-                                 offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], intercept = intrcpt, standardize = FALSE,
-                                 penalty.factor=penfctr,thresh=10^-10)
-             betasinit <- as.vector(glmGRtrgt$beta)
-             betasinit[!((1:p)%in%unpen)] <- betasinit[!((1:p)%in%unpen)] + muinitp[!((1:p)%in%unpen)]
-             intrcptinit <- glmGRtrgt$a0
+             if(est_beta_method=="glmnet"){
+               glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
+                                           #lambda = lambda/n*sd_y,
+                                           family=fml,
+                                           offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], intercept = intrcpt, standardize = FALSE,
+                                           penalty.factor=penfctr)
+               #minlam <- min(glmGRtrgt$lambda)*n/sd_y
+               if(lambda < minlam){
+                 warning("Estimated lambda value found too small, set to minimum to for better numerical performance")
+                 lambda <- minlam
+                 lambdap <- rep(lambda,p) #px1 vector with penalty for each beta_k, k=1,..,p
+                 lambdap[(1:p)%in%unpen] <- 0
+                 
+                 #re-estimate tau_global for new lambda value
+                 gamma[,1] <- 1/lambda
+                 tauglobal <- 1/lambda
+               }
+               
+               #betasinit <- as.vector(glmGRtrgt$beta)
+               betasinit <- coef(glmGRtrgt,s=lambda/n*sd_y,thresh = 10^-10, exact=TRUE,
+                                 x=X,y=Y,
+                                 family=fml,
+                                 offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], intercept = intrcpt,
+                                 penalty.factor=penfctr)[-1]
+               betasinit[!((1:p)%in%unpen)] <- betasinit[!((1:p)%in%unpen)] + muinitp[!((1:p)%in%unpen)]
+               #intrcptinit <- glmGRtrgt$a0
+               intrcptinit <- coef(glmGRtrgt,s=lambda/n*sd_y,thresh = 10^-10,exact=TRUE,
+                                   x=X,y=Y,
+                                   family=fml,
+                                   offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], intercept = intrcpt,
+                                   penalty.factor=penfctr)[1]
+             }else{ #use multiridge package
+               XXbl <- list(X[,penfctr!=0]%*%t(X[,penfctr!=0]))
+               #Compute betas
+               XXT <- multiridge::SigmaFromBlocks(XXbl,penalties=lambda) #create nxn Sigma matrix = sum_b [lambda_b)^{-1} X_b %*% t(X_b)]
+               if(sum((1:p)%in%unpen)>0){
+                 fit <- multiridge::IWLSridge(XXT,Y=Y, model=model,intercept=intrcpt,X1=X[,(1:p)%in%unpen]) #Fit. fit$etas contains the n linear predictors
+               }else{
+                 fit <- multiridge::IWLSridge(XXT,Y=Y, model=model,intercept=intrcpt) #Fit. fit$etas contains the n linear predictors
+               }
+               
+               betas <- multiridge::betasout(fit, Xblocks=list(X[,penfctr!=0]), penalties=lambda) #Find betas.
+               intrcptinit <- c(betas[[1]][1]) #intercept
+               betasinit <- rep(0,p) 
+               betasinit[(1:p)%in%unpen] <- betas[[1]][-1] #unpenalised variables
+               betasinit[!((1:p)%in%unpen)] <- betas[[2]]
+               rm(betas)
+             }
+             
            },
            'cox'={
              #Cross-validation lambda
@@ -807,13 +870,50 @@ ecpc <- function(Y,X,
                muinitp <- as.vector(c(muhat[,1])%*%Zt) #px1 vector with estimated prior mean for beta_k, k=1,..,p (0 for unpenalised covariates) 
                muinitp[(1:p)%in%unpen] <- 0
              }
-             glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
-                                 lambda = 2*lambda/n*sd_y,family=fml,
-                                 offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], standardize = FALSE,
-                                 penalty.factor=penfctr,thresh = 10^-10)
-             betasinit <- as.vector(glmGRtrgt$beta)
-             betasinit[!((1:p)%in%unpen)] <- betasinit[!((1:p)%in%unpen)] + muinitp[!((1:p)%in%unpen)]
-             intrcptinit <- glmGRtrgt$a0
+             if(est_beta_method=="glmnet"){
+               glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
+                                           #lambda = 2*lambda/n*sd_y,
+                                           family=fml,
+                                           offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], standardize = FALSE,
+                                           penalty.factor=penfctr)
+               #minlam <- min(glmGRtrgt$lambda)*n/sd_y/2
+               if(lambda < minlam){
+                 warning("Estimated lambda value found too small, set to minimum to for better numerical performance")
+                 lambda <- minlam
+                 lambdap <- rep(lambda,p) #px1 vector with penalty for each beta_k, k=1,..,p
+                 lambdap[(1:p)%in%unpen] <- 0
+                 
+                 #re-estimate tau_global for new lambda value
+                 gamma[,1] <- 1/lambda
+                 tauglobal <- 1/lambda
+               }
+               
+               intrcptinit <- NULL #NULL for Cox
+               #betasinit <- as.vector(glmGRtrgt$beta)
+               betasinit <- coef(glmGRtrgt,s=lambda/n*sd_y,thresh = 10^-10,exact=TRUE,
+                                 x=X,y=Y,
+                                 family=fml,
+                                 offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)],
+                                 penalty.factor=penfctr)
+               betasinit[!((1:p)%in%unpen)] <- betasinit[!((1:p)%in%unpen)] + muinitp[!((1:p)%in%unpen)]
+               #intrcptinit <- glmGRtrgt$a0
+             }else{
+               XXbl <- list(X[,penfctr!=0]%*%t(X[,penfctr!=0]))
+               #Compute betas
+               XXT <- multiridge::SigmaFromBlocks(XXbl,penalties=lambda) #create nxn Sigma matrix = sum_b [lambda_b)^{-1} X_b %*% t(X_b)]
+               if(sum((1:p)%in%unpen)>0){
+                 fit <- multiridge::IWLSCoxridge(XXT,Y=Y, model=model,X1=X[,(1:p)%in%unpen]) #Fit. fit$etas contains the n linear predictors
+               }else{
+                 fit <- multiridge::IWLSCoxridge(XXT,Y=Y) #Fit. fit$etas contains the n linear predictors
+               }
+               
+               betas <- multiridge::betasout(fit, Xblocks=list(X[,penfctr!=0]), penalties=lambda) #Find betas.
+               intrcptinit <- c(betas[[1]][1]) #intercept
+               betasinit <- rep(0,p) 
+               betasinit[(1:p)%in%unpen] <- betas[[1]][-1] #unpenalised variables
+               betasinit[!((1:p)%in%unpen)] <- betas[[2]]
+               rm(betas)
+             }
            }
     )
   }
@@ -917,6 +1017,7 @@ ecpc <- function(Y,X,
       R<-Xc
       #C<-L%*%R
       V<-sigmahat*apply(L,1,function(x){sum(x^2)})
+      zeroV <- which(V==0)
       #same as: V3 <- sigmahat*diag(L%*%R %*% XtXDinv)
     }
     
@@ -952,24 +1053,58 @@ ecpc <- function(Y,X,
       muinitp[(1:p)%in%unpen] <- 0
       if(model=="cox"){
         glmGRtrgt <- glmnet::glmnet(X,as.matrix(Y),alpha=0,
-                        lambda = lambda/n*sd_y*2,family=fml,
+                        #lambda = lambda/n*sd_y*2,
+                        family=fml,
                         offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], standardize = FALSE,
                         penalty.factor=penfctr)
+        betasinit <- coef(glmGRtrgt,s=lambda/n*sd_y*2, exact=TRUE,
+                          x=X, y=as.matrix(Y),
+                          family=fml,
+                          offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)],
+                          penalty.factor=penfctr)
+        betasinit[pen] <- betasinit[pen] + muinitp[pen]
+        #intrcptinit <- glmGRtrgt$a0
+        intrcptinit <- NULL
       }else if(model=="logistic"){
         intrcpt <- intrcptMoM #reset intercept instead of using logit(p0hat)
         glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
-                        lambda = lambda/n*sd_y,family=fml,
+                        #lambda = lambda/n*sd_y,
+                        family=fml,
                         offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], intercept = intrcpt, standardize = FALSE,
                         penalty.factor=penfctr)
+        #betasinit <- as.vector(glmGRtrgt$beta)
+        betasinit <- coef(glmGRtrgt,s=lambda/n*sd_y, exact=TRUE,
+                          x=X,y=Y,
+                          family=fml,
+                          offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], intercept = intrcpt,
+                          penalty.factor=penfctr)[-1]
+        betasinit[pen] <- betasinit[pen] + muinitp[pen]
+        #intrcptinit <- glmGRtrgt$a0
+        intrcptinit <- coef(glmGRtrgt,s=lambda/n*sd_y, exact=TRUE,
+                            x=X,y=Y,
+                            family=fml,
+                            offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], intercept = intrcpt,
+                            penalty.factor=penfctr)[1]
       }else{
         glmGRtrgt <- glmnet::glmnet(X,Y,alpha=0,
-                            lambda = lambda/n*sd_y,family=fml,
+                            #lambda = lambda/n*sd_y,
+                            family=fml,
                             offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], intercept = intrcpt, standardize = FALSE,
                             penalty.factor=penfctr)
+        betasinit <- coef(glmGRtrgt,s=lambda/n*sd_y, exact=TRUE,
+                          exact=TRUE,
+                          x=X,y=Y,
+                          family=fml,
+                          offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], intercept = intrcpt,
+                          penalty.factor=penfctr)[-1]
+        betasinit[pen] <- betasinit[pen] + muinitp[pen]
+        #intrcptinit <- glmGRtrgt$a0
+        intrcptinit <- coef(glmGRtrgt,s=lambda/n*sd_y, exact=TRUE,
+                            x=X,y=Y,
+                            family=fml,
+                            offset = X[,!((1:p)%in%unpen)] %*% muinitp[!((1:p)%in%unpen)], intercept = intrcpt,
+                            penalty.factor=penfctr)[1]
       }
-      betasinit <- as.vector(glmGRtrgt$beta)
-      betasinit[pen] <- betasinit[pen] + muinitp[pen]
-      intrcptinit <- glmGRtrgt$a0
 
       MoMinit <- FALSE
       
@@ -1182,16 +1317,19 @@ ecpc <- function(Y,X,
                              glmMuin <- glmnet::glmnet(A.muinAcc[[i]][indnot0,indnot0],Bmuin[[i]][indnot0]- 
                                                          as.matrix(A.muinAcc[[i]][indnot0,ind0],c(length(indnot0),length(ind0)))%*%muhat[ind0],
                                                        alpha=0,
-                                                       lambda = 2*lambda1/length(indnot0)*sd_Bmuin[[i]],family="gaussian",
+                                                       #lambda = 2*lambda1/length(indnot0)*sd_Bmuin[[i]],
+                                                       family="gaussian",
                                                        offset = A.muin[[i]][indnot0,indnot0] %*% mutrgtG[indnot0], intercept = FALSE, standardize = FALSE)
                            }else{
                              glmMuin <- glmnet::glmnet(A.muinAcc[[i]][indnot0,indnot0],Bmuin[[i]][indnot0],
                                                        alpha=0,
-                                                       lambda = 2*lambda1/length(indnot0)*sd_Bmuin[[i]],family="gaussian",
+                                                       #lambda = 2*lambda1/length(indnot0)*sd_Bmuin[[i]],
+                                                       family="gaussian",
                                                        offset = A.muin[[i]][indnot0,indnot0] %*% mutrgtG[indnot0], intercept = FALSE, standardize = FALSE)
                            }
-                           
-                           muhatin[indnot0] <- Wminhalf[indnot0,indnot0] %*% as.vector(glmMuin$beta) + mutrgtG[indnot0]
+                           #muhatin[indnot0] <- Wminhalf[indnot0,indnot0] %*% as.vector(glmMuin$beta) + mutrgtG[indnot0]
+                           muhatin[indnot0] <- Wminhalf[indnot0,indnot0] %*% 
+                             coef(glmMuin,s=2*lambda1/length(indnot0)*sd_Bmuin[[i]])[-1] + mutrgtG[indnot0]
                            return(muhatin)
                          }
                          ) #group estimate for mu_in
@@ -1312,18 +1450,22 @@ ecpc <- function(Y,X,
                          #ridge estimate for group means
                          glmMu <- glmnet::glmnet(A.muAcc[indnot0,indnot0],Bmu[indnot0]-
                                                    as.matrix(A.muAcc[indnot0,ind0],c(length(indnot0),length(ind0)))%*%muhat[ind0],alpha=0,
-                                                 lambda = 2*lambdashat[1]/length(indnot0)*sd_Bmu,family="gaussian",
+                                                 #lambda = 2*lambdashat[1]/length(indnot0)*sd_Bmu,
+                                                 family="gaussian",
                                                  offset = A.mu[indnot0,indnot0] %*% mutrgtG[indnot0], intercept = FALSE, standardize = FALSE)
                        }else{
                          sd_Bmu <- sqrt(var(Bmu[indnot0]
                                             -as.matrix(A.mu[indnot0,indnot0],c(length(indnot0),length(ind0))) %*% mutrgtG[indnot0])*(length(indnot0)-1)/length(indnot0))[1]
                          #ridge estimate for group means
                          glmMu <- glmnet::glmnet(A.muAcc[indnot0,indnot0],Bmu[indnot0],alpha=0,
-                                                 lambda = 2*lambdashat[1]/length(indnot0)*sd_Bmu,family="gaussian",
+                                                 #lambda = 2*lambdashat[1]/length(indnot0)*sd_Bmu,
+                                                 family="gaussian",
                                                  offset = A.mu[indnot0,indnot0] %*% mutrgtG[indnot0], intercept = FALSE, standardize = FALSE)
                        }
                        #groups with variance 0 keep same prior parameters, update other groups
-                       muhat[indnot0] <- Wminhalf[indnot0,indnot0] %*% as.vector(glmMu$beta) + mutrgtG[indnot0]
+                       #muhat[indnot0] <- Wminhalf[indnot0,indnot0] %*% as.vector(glmMu$beta) + mutrgtG[indnot0]
+                       muhat[indnot0] <- Wminhalf[indnot0,indnot0] %*% 
+                         coef(glmMu, s=2*lambdashat[1]/length(indnot0)*sd_Bmu)[-1] + mutrgtG[indnot0]
                        muhat[indnot0] <- diag(1/sdA.mu[indnot0]) %*% muhat[indnot0] #restore sd columns A.mu
                        
                      },
@@ -2936,7 +3078,7 @@ ecpc <- function(Y,X,
     #should be the same as
     #lambdap2<-sigmahat/as.vector(c(partWeightsTauG*gamma*tauglobal)%*%Zt[,pen])
   
-    #-3.3.5 Update beta using glmnet #######################################################################
+    #-3.3.5 Update beta using glmnet or multiridge#######################################################################
     if(!silent) print("Estimate regression coefficients")
     if(all(gamma[,Itr+1]==0) | all(lambdap==Inf)){
       beta <- muhatp
@@ -2957,31 +3099,82 @@ ecpc <- function(Y,X,
         sd_y2 <- 1 #do not standardize Y-offset for logistic/cox model
       }
       if(any(is.nan(sqrt(lambdap[pen])))){browser()}
-      lambdaoverall <- exp(mean(log(sigmahat/tauglobal[datablockNo[pen]])))
-      Xacc <- X
-      Xacc[,pen] <- as.matrix(X[,pen] %*% Matrix::sparseMatrix(i=1:length(pen),j=1:length(pen),
-                                                       x=c(1/sqrt(lambdap[pen]/lambdaoverall))))
       
-      if(model=="cox"){
-        glmGR <- glmnet::glmnet(Xacc,as.matrix(Y),alpha=0,
-                        lambda = lambdaoverall/n*sd_y2*2,family=fml,
-                        offset = X[,!((1:p)%in%unpen)] %*% muhatp[!((1:p)%in%unpen)], standardize = FALSE,
-                        penalty.factor=penfctr, thresh=10^-10)
-      }else{
-        glmGR <- glmnet::glmnet(Xacc,Y,alpha=0,
-                        lambda = lambdaoverall/n*sd_y2,family=fml,
-                        offset = X[,!((1:p)%in%unpen)] %*% muhatp[!((1:p)%in%unpen)], intercept = intrcpt, standardize = FALSE,
-                        penalty.factor=penfctr, thresh=10^-10)
+      if(est_beta_method=="glmnet"){ #glmnet
+        lambdaoverall <- exp(mean(log(sigmahat/tauglobal[datablockNo[pen]])))
+        Xacc <- X
+        Xacc[,pen] <- as.matrix(X[,pen] %*% Matrix::sparseMatrix(i=1:length(pen),j=1:length(pen),
+                                                         x=c(1/sqrt(lambdap[pen]/lambdaoverall))))
+        
+        if(model=="cox"){
+          glmGR <- glmnet::glmnet(Xacc,as.matrix(Y),alpha=0,
+                          #lambda = lambdaoverall/n*sd_y2*2,
+                          family=fml,
+                          offset = X[,!((1:p)%in%unpen)] %*% muhatp[!((1:p)%in%unpen)], standardize = FALSE,
+                          penalty.factor=penfctr)
+          
+          beta <- coef(glmGR, s=lambdaoverall/n*sd_y2*2,thresh = 10^-10, exact=TRUE,
+                       x=Xacc,y=as.matrix(Y),
+                       family=fml,
+                       offset = X[,!((1:p)%in%unpen)] %*% muhatp[!((1:p)%in%unpen)],
+                       penalty.factor=penfctr) 
+          beta[pen] <- c(1/sqrt(lambdap[pen]/lambdaoverall)) * beta[pen] + muhatp[pen]
+        }else{
+          glmGR <- glmnet::glmnet(Xacc,Y,alpha=0,
+                          #lambda = lambdaoverall/n*sd_y2,
+                          family=fml,
+                          offset = X[,!((1:p)%in%unpen)] %*% muhatp[!((1:p)%in%unpen)], intercept = intrcpt, standardize = FALSE,
+                          penalty.factor=penfctr)
+          
+          beta <- coef(glmGR, s=lambdaoverall/n*sd_y2,thresh = 10^-10, exact=TRUE,
+                       x=Xacc, y=Y, family=fml,
+                       offset = X[,!((1:p)%in%unpen)] %*% muhatp[!((1:p)%in%unpen)], intercept = intrcpt,
+                       penalty.factor=penfctr)[-1]
+          beta[pen] <- c(1/sqrt(lambdap[pen]/lambdaoverall)) * beta[pen] + muhatp[pen]
+          a0 <- coef(glmGR, s=lambdaoverall/n*sd_y2,thresh = 10^-10, exact=TRUE,
+                           x=Xacc, y=Y, family=fml,
+                           offset = X[,!((1:p)%in%unpen)] %*% muhatp[!((1:p)%in%unpen)], intercept = intrcpt,
+                           penalty.factor=penfctr)[1]
+        }
+        # beta <- as.vector(glmGR$beta) 
+        #beta[pen] <- c(1/sqrt(lambdap[pen]/lambdaoverall)) * beta[pen] + muhatp[pen]
+        
+        # beta[pen] <- as.vector(glmGR$beta)[pen] + muhatp
+        
+        # if(standardise_Y){
+        #   beta <- beta*sd_y_former
+        #   glmGR$a0 <- glmGR$a0*sd_y_former
+        # } 
+      }else{ #use multiridge package to estimate betas
+        lambdaoverall <- exp(mean(log(sigmahat/tauglobal[datablockNo[pen]])))
+        Xacc <- X
+        Xacc[,pen] <- as.matrix(X[,pen] %*% Matrix::sparseMatrix(i=1:length(pen),j=1:length(pen),
+                                                                 x=c(1/sqrt(lambdap[pen]/lambdaoverall))))
+        XXbl <- list(Xacc%*%t(Xacc)) 
+        #Compute betas
+        XXT <- multiridge::SigmaFromBlocks(XXbl,penalties=lambdaoverall) #create nxn Sigma matrix = sum_b [lambda_b)^{-1} X_b %*% t(X_b)]
+        if(model!="cox"){
+          if(sum((1:p)%in%unpen)>0){
+            fit <- multiridge::IWLSridge(XXT,Y=Y, model=model,intercept=intrcpt,X1=X[,(1:p)%in%unpen]) #Fit. fit$etas contains the n linear predictors
+          }else{
+            fit <- multiridge::IWLSridge(XXT,Y=Y, model=model,intercept=intrcpt) #Fit. fit$etas contains the n linear predictors
+          }
+        }else{
+          if(sum((1:p)%in%unpen)>0){
+            fit <- multiridge::IWLSCoxridge(XXT,Y=Y, model=model,X1=X[,(1:p)%in%unpen]) #Fit. fit$etas contains the n linear predictors
+          }else{
+            fit <- multiridge::IWLSCoxridge(XXT,Y=Y) #Fit. fit$etas contains the n linear predictors
+          }
+        }
+        
+        betas <- multiridge::betasout(fit, Xblocks=list(Xacc[,pen]), penalties=lambdaoverall) #Find betas.
+        a0 <- c(betas[[1]][1]) #intercept
+        beta <- rep(0,p) 
+        beta[(1:p)%in%unpen] <- betas[[1]][-1] #unpenalised variables
+        beta[pen] <- betas[[2]]
+        beta[pen] <- c(1/sqrt(lambdap[pen]/lambdaoverall)) * beta[pen]
+        rm(betas)
       }
-      beta <- as.vector(glmGR$beta) 
-      beta[pen] <- c(1/sqrt(lambdap[pen]/lambdaoverall)) * beta[pen] + muhatp[pen]
-      
-      # beta[pen] <- as.vector(glmGR$beta)[pen] + muhatp
-      
-      # if(standardise_Y){
-      #   beta <- beta*sd_y_former
-      #   glmGR$a0 <- glmGR$a0*sd_y_former
-      # } 
     }
     
     #-3.3.6 Update predictions on independent data (if given) ################################################
@@ -2989,12 +3182,12 @@ ecpc <- function(Y,X,
       #Ypredridge <- predict(glmGR,newx=X2)
       if(model=="linear"){
         X2c <- cbind(X2,rep(1,n2))
-        YpredGR[,Itr+1] <- X2c %*% c(beta,glmGR$a0)
+        YpredGR[,Itr+1] <- X2c %*% c(beta,a0)
         MSEecpc[Itr+1]<- sum((YpredGR[,Itr+1]-Y2)^2)/n2
       } 
       if(model=='logistic'){
         X2c <- cbind(X2,rep(1,n2))
-        YpredGR[,Itr+1] <- 1/(1+exp(-X2c %*% c(beta,glmGR$a0)))
+        YpredGR[,Itr+1] <- 1/(1+exp(-X2c %*% c(beta,a0)))
         MSEecpc[Itr+1]<- sum((YpredGR[,Itr+1]-Y2)^2)/n2
         if(any(is.nan(YpredGR[,Itr+1]))){browser()}
       }else if(model=='cox'){ 
@@ -3011,7 +3204,7 @@ ecpc <- function(Y,X,
     #-3.3.7 Set current estimates as initial estimates for next iteration #####################################
     betasinit <- beta
     muinitp <- muhatp
-    intrcptinit <- glmGR$a0
+    intrcptinit <- a0
     ind0 <- which(gamma[,Itr+1]==0) #update index of groups with zero variance
     indnot0 <- which(gamma[,Itr+1]>0)
     Itr <- Itr+1
@@ -3033,7 +3226,7 @@ ecpc <- function(Y,X,
   if(postselection!=FALSE){
     if(!silent) print("Sparsify model with posterior selection")
       #for multi==FALSE; tauglobal=sigmahat/lambdaoverall
-      postSel <- postSelect(X=X,Y=Y,beta=beta,intrcpt=glmGR$a0,penfctr=penfctr, 
+      postSel <- postSelect(X=X,Y=Y,beta=beta,intrcpt=a0,penfctr=penfctr, 
                             postselection=postselection,maxsel=maxsel, 
                             penalties=lambdap,model=model,tauglobal=sigmahat/lambdaoverall,
                             sigmahat=sigmahat,muhatp=muhatp, 
@@ -3044,34 +3237,75 @@ ecpc <- function(Y,X,
   #-5. (optional) Compare with glmnet --------------------------------------------------------------
   betaridge<-NaN; Ypredridge<-NaN; 
   if(!is.nan(compare) & compare!=FALSE){
-    lambdaoverall <- exp(mean(log(lambdaridge[datablockNo[pen]])))
-    Xacc <- X
-    Xacc[,pen] <- as.matrix(X[,pen] %*% Matrix::sparseMatrix(i=1:length(pen),j=1:length(pen),
-                                                     x=c(1/sqrt(lambdaridge[datablockNo[pen]]/lambdaoverall))))
-    if(model=="cox"){
-      glmR <- glmnet::glmnet(Xacc,as.matrix(Y),family=fml,alpha=0,
-                     lambda=lambdaoverall*sd_y/n*2,standardize = FALSE,
-                     penalty.factor=penfctr,thresh = 10^-10)
-    }else{
-      glmR <- glmnet::glmnet(X,Y,family=fml,alpha=0,
-                     lambda=lambdaoverall*sd_y/n,standardize = FALSE,intercept=intrcptGLM,
-                     penalty.factor=penfctr,thresh = 10^-10)
+    if(est_beta_method=="glmnet"){ #glmnet
+      lambdaoverall <- exp(mean(log(lambdaridge[datablockNo[pen]])))
+      Xacc <- X
+      Xacc[,pen] <- as.matrix(X[,pen] %*% Matrix::sparseMatrix(i=1:length(pen),j=1:length(pen),
+                                                               x=c(1/sqrt(lambdaridge[datablockNo[pen]]/lambdaoverall))))
+      if(model=="cox"){
+        glmR <- glmnet::glmnet(Xacc,as.matrix(Y),family=fml,alpha=0,
+                               #lambda=lambdaoverall*sd_y/n*2,
+                               standardize = FALSE,
+                               penalty.factor=penfctr)
+        betaridge <- coef(glmR, s=lambdaoverall*sd_y/n,thresh = 10^-10, exact=TRUE,
+                          x=Xacc, y=as.matrix(Y),
+                          family=fml,
+                          penalty.factor=penfctr)
+        betaridge[pen] <- c(1/sqrt(lambdaridge[datablockNo[pen]]/lambdaoverall)) * betaridge[pen]
+      }else{
+        glmR <- glmnet::glmnet(X,Y,family=fml,alpha=0,
+                               #lambda=lambdaoverall*sd_y/n,
+                               standardize = FALSE,intercept=intrcptGLM,
+                               penalty.factor=penfctr)
+        betaridge <- coef(glmR, s=lambdaoverall*sd_y/n,thresh = 10^-10, exact=TRUE,
+                          x=X, y=Y, family=fml,
+                          intercept=intrcptGLM,
+                          penalty.factor=penfctr)[-1]
+        a0_ridge <- coef(glmR, s=lambdaoverall*sd_y/n,thresh = 10^-10, exact=TRUE,
+                        x=X, y=Y, family=fml,
+                        intercept=intrcptGLM,
+                        penalty.factor=penfctr)[1]
+        betaridge[pen] <- c(1/sqrt(lambdaridge[datablockNo[pen]]/lambdaoverall)) * betaridge[pen]
+      }
+      # betaridge <- as.vector(glmR$beta)
+      # betaridge[pen] <- c(1/sqrt(lambdaridge[datablockNo[pen]]/lambdaoverall)) * betaridge[pen]
+    }else{ #use multiridge package to update ordinary ridge betas
+      XXbl <- list(X[,pen]%*%t(X[,pen]))
+      #Compute betas
+      XXT <- multiridge::SigmaFromBlocks(XXbl,penalties=lambdaridge) #create nxn Sigma matrix = sum_b [lambda_b)^{-1} X_b %*% t(X_b)]
+      if(model!="cox"){
+        if(sum((1:p)%in%unpen)>0){
+          fit <- multiridge::IWLSridge(XXT,Y=Y, model=model,intercept=intrcptGLM,X1=X[,(1:p)%in%unpen]) #Fit. fit$etas contains the n linear predictors
+        }else{
+          fit <- multiridge::IWLSridge(XXT,Y=Y, model=model,intercept=intrcptGLM) #Fit. fit$etas contains the n linear predictors
+        }
+      }else{
+        if(sum((1:p)%in%unpen)>0){
+          fit <- multiridge::IWLSCoxridge(XXT,Y=Y, model=model,X1=X[,(1:p)%in%unpen]) #Fit. fit$etas contains the n linear predictors
+        }else{
+          fit <- multiridge::IWLSCoxridge(XXT,Y=Y) #Fit. fit$etas contains the n linear predictors
+        }
+      }
+      
+      betas <- multiridge::betasout(fit, Xblocks=list(X[,pen]), penalties=lambdaridge) #Find betas.
+      a0_ridge <- c(betas[[1]][1]) #intercept
+      betaridge <- rep(0,p) 
+      betaridge[(1:p)%in%unpen] <- betas[[1]][-1] #unpenalised variables
+      betaridge[pen] <- betas[[2]]
+      rm(betas)
     }
-    betaridge <- as.vector(glmR$beta)
-    betaridge[pen] <- c(1/sqrt(lambdaridge[datablockNo[pen]]/lambdaoverall)) * betaridge[pen]
-    
     if(!missing(X2)){
       #Ypredridge <- predict(glmR,newx=X2)
       #browser()
       
       if(model=="linear"){
         X2c <- cbind(X2,rep(1,n2))
-        Ypredridge <- X2c %*% c(betaridge,glmR$a0)
+        Ypredridge <- X2c %*% c(betaridge,a0_ridge)
         MSEridge <- sum((Ypredridge-Y2)^2)/n2
       } 
       if(model=='logistic'){
         X2c <- cbind(X2,rep(1,n2))
-        Ypredridge <- 1/(1+exp(-X2c %*% c(betaridge,glmR$a0)))
+        Ypredridge <- 1/(1+exp(-X2c %*% c(betaridge,a0_ridge)))
         MSEridge <- sum((Ypredridge-Y2)^2)/n2
       }else if(model=="cox"){
         expXb<-exp(X %*% c(betaridge))
@@ -3088,7 +3322,7 @@ ecpc <- function(Y,X,
   names(gamma0)<-NULL
   output <- list(
     beta=beta, #beta from ecpc (with Group Ridge penalties)
-    intercept=glmGR$a0, #unpenalised intercept covariate
+    intercept=a0, #unpenalised intercept covariate
     tauglobal=tauglobal, #overall tauglobal
     gammatilde = gammatilde[,nIt+1], #EB estimated prior group variance before truncating
     gamma=gamma[,nIt+1], #group weights variance
@@ -3126,7 +3360,7 @@ ecpc <- function(Y,X,
 
   if(!is.nan(compare) & compare!=FALSE){ #comparison with ordinary ridge obtained with glmnet
     output$betaridge <- betaridge #ordinary ridge or multiridge beta
-    output$interceptridge <- glmR$a0
+    output$interceptridge <- a0_ridge
     output$lambdaridge <- lambdaridge #ordinary ridge lambda or multilambda
     if(!all(is.nan(X2))){
       output$Ypredridge <- Ypredridge
@@ -3275,19 +3509,37 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           else {
             if(model=="cox"){
               glmPost <- glmnet::glmnet(Xacc[,nonzeros],as.matrix(Y),alpha=alpha,
-                              lambda = lam2*2/(1-alpha),family=fml,
+                              #lambda = lam2/(1-alpha),
+                              family=fml,
                               offset = offset, standardize = FALSE,
-                              penalty.factor=penfctr[nonzeros], thresh=10^-10)
+                              penalty.factor=penfctr[nonzeros])
+              betaPost <- rep(0,p)
+              betaPost[nonzeros] <- coef(glmPost, s=lam2/(1-alpha), exact=TRUE, 
+                                         x=Xacc[,nonzeros],y=as.matrix(Y),
+                                         offset = offset, penalty.factor=penfctr[nonzeros],
+                                         family=fml,alpha=alpha,thresh = 10^-10)
+              betaPost[pen] <- c(1/sqrt(lambdap[pen]/lambdaoverall)) * betaPost[pen] + muhatp[pen]
             }else if(model %in% c("logistic","linear")){
               glmPost <- glmnet::glmnet(Xacc[,nonzeros],Y,alpha=alpha,
-                              lambda = lam2/(1-alpha),family=fml,
+                              #lambda = lam2/(1-alpha),
+                              family=fml,
                               offset = offset, standardize = FALSE,
                               intercept= intrcpt,
-                              penalty.factor=penfctr[nonzeros], thresh=10^-10)
+                              penalty.factor=penfctr[nonzeros])
+              betaPost <- rep(0,p)
+              betaPost[nonzeros] <- coef(glmPost, s=lam2/(1-alpha), exact=TRUE,
+                                         x=Xacc[,nonzeros],y=Y,
+                                         offset = offset, penalty.factor=penfctr[nonzeros],
+                                         family=fml,alpha=alpha,intercept= intrcpt,thresh = 10^-10)[-1]
+              glmPost$a0 <- coef(glmPost, s=lam2/(1-alpha), exact=TRUE,
+                                 x=Xacc[,nonzeros],y=Y,
+                                 offset = offset, penalty.factor=penfctr[nonzeros],
+                                 family=fml,alpha=alpha,intercept= intrcpt,thresh = 10^-10)[1]
+              betaPost[pen] <- c(1/sqrt(lambdap[pen]/lambdaoverall)) * betaPost[pen] + muhatp[pen]
             }
-            betaPost <- rep(0,p)
-            betaPost[nonzeros] <- as.vector(glmPost$beta)
-            betaPost[pen] <- c(1/sqrt(lambdap[pen]/lambdaoverall)) * betaPost[pen] + muhatp[pen]
+            # betaPost <- rep(0,p)
+            # betaPost[nonzeros] <- as.vector(glmPost$beta)
+            # betaPost[pen] <- c(1/sqrt(lambdap[pen]/lambdaoverall)) * betaPost[pen] + muhatp[pen]
             return(sum(betaPost[pen] != 0) - maxselec ) #number of non-zero penalised covariates
           }
         }
@@ -3306,19 +3558,39 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
         #for found alpha, refit model to see which beta are selected
         if(model=="cox"){
           glmPost0 <- glmnet::glmnet(Xacc[,nonzeros],as.matrix(Y),alpha=alpha,
-                           lambda = lam2*2/(1-alpha),family=fml,
+                           #lambda = lam2/(1-alpha),
+                           family=fml,
                            offset = offset, standardize = FALSE,
-                           penalty.factor=penfctr[nonzeros], thresh=10^-10)
+                           penalty.factor=penfctr[nonzeros])
+          betaPost0 <- rep(0,p)
+          betaPost0[nonzeros] <- coef(glmPost0, s=lam2/(1-alpha), exact=TRUE,
+                                      x=Xacc[,nonzeros],y=as.matrix(Y),
+                                      offset = offset, penalty.factor=penfctr[nonzeros],
+                                      family=fml,alpha=alpha,thresh = 10^-10)
+          betaPost0[pen] <- c(1/sqrt(lambdap[pen]/sigmahat*tauglobal)) * betaPost0[pen] + muhatp[pen]
+          whichPostboth <- betaPost0 != 0 #both unpenalised covariates and selected penalised
         }else{
           glmPost0 <- glmnet::glmnet(Xacc[,nonzeros],Y,alpha=alpha,
-                           lambda = lam2/(1-alpha) ,family=fml,
+                           #lambda = lam2/(1-alpha) ,
+                           family=fml,
                            offset = offset, intercept = intrcpt, standardize = FALSE,
-                           penalty.factor=penfctr[nonzeros], thresh=10^-10)
+                           penalty.factor=penfctr[nonzeros])
+          betaPost0 <- rep(0,p)
+          betaPost0[nonzeros] <- coef(glmPost0, lam2/(1-alpha), exact=TRUE,
+                                      x=Xacc[,nonzeros],y=Y,
+                                      offset = offset, penalty.factor=penfctr[nonzeros],
+                                      family=fml,alpha=alpha,intercept= intrcpt,thresh = 10^-10)[-1]
+          glmPost0$a0 <- coef(glmPost0, lam2/(1-alpha), exact=TRUE,
+                              x=Xacc[,nonzeros],y=Y,
+                              offset = offset, penalty.factor=penfctr[nonzeros],
+                              family=fml,alpha=alpha,intercept= intrcpt,thresh = 10^-10)[1]
+          betaPost0[pen] <- c(1/sqrt(lambdap[pen]/sigmahat*tauglobal)) * betaPost0[pen] + muhatp[pen]
+          whichPostboth <- betaPost0 != 0 #both unpenalised covariates and selected penalised
         }
-        betaPost0 <- rep(0,p)
-        betaPost0[nonzeros] <- as.vector(glmPost0$beta)
-        betaPost0[pen] <- c(1/sqrt(lambdap[pen]/sigmahat*tauglobal)) * betaPost0[pen] + muhatp[pen]
-        whichPostboth <- betaPost0 != 0 #both unpenalised covariates and selected penalised
+        # betaPost0 <- rep(0,p)
+        # betaPost0[nonzeros] <- as.vector(glmPost0$beta)
+        # betaPost0[pen] <- c(1/sqrt(lambdap[pen]/sigmahat*tauglobal)) * betaPost0[pen] + muhatp[pen]
+        # whichPostboth <- betaPost0 != 0 #both unpenalised covariates and selected penalised
 
         if(sum(whichPostboth)<=1){
           warning("At least two variables should be selected for glmnet")
@@ -3332,12 +3604,12 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
             if(model=="cox"){
               lambdaGLM<-glmnet::cv.glmnet(Xacc[,whichPostboth, drop=FALSE],as.matrix(Y),alpha=0,
                                    family=fml,offset = offset ,standardize = FALSE,
-                                   penalty.factor=penfctr[whichPostboth], thresh=10^-10) #alpha=0 for ridge
+                                   penalty.factor=penfctr[whichPostboth]) #alpha=0 for ridge
               lam2<-lambdaGLM$lambda.min
             }else{
               lambdaGLM<-glmnet::cv.glmnet(Xacc[,whichPostboth, drop=FALSE],Y,alpha=0,
                                    family=fml,offset = offset , intercept = intrcpt, standardize = FALSE,
-                                   penalty.factor=penfctr[whichPostboth], thresh=10^-10) #alpha=0 for ridge
+                                   penalty.factor=penfctr[whichPostboth]) #alpha=0 for ridge
               lam2<-lambdaGLM$lambda.min
             }
           }
@@ -3345,17 +3617,33 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           #Recompute beta using only selected beta and group ridge penalty (without lasso penalty)
           if(model=="cox"){
             glmPost <- glmnet::glmnet(Xacc[,whichPostboth, drop=FALSE],as.matrix(Y),alpha=0,
-                            lambda = lam2,family=fml,
+                            #lambda = lam2,
+                            family=fml,
                             offset = offset ,standardize = FALSE,
-                            penalty.factor=penfctr[whichPostboth], thresh=10^-10)
+                            penalty.factor=penfctr[whichPostboth])
+            betaPost <- rep(0,p)
+            betaPost[whichPostboth] <- coef(glmPost, s=lam2, exact=TRUE, 
+                                            x=Xacc[,whichPostboth, drop=FALSE],y=as.matrix(Y),
+                                            offset = offset ,penalty.factor=penfctr[whichPostboth],
+                                            family=fml,thresh = 10^-10)
           }else{
             glmPost <- glmnet::glmnet(Xacc[,whichPostboth, drop=FALSE],Y,alpha=0,
-                            lambda = lam2,family=fml,
+                            #lambda = lam2,
+                            family=fml,
                             offset = offset , intercept = intrcpt, standardize = FALSE,
-                            penalty.factor=penfctr[whichPostboth], thresh=10^-10)
+                            penalty.factor=penfctr[whichPostboth])
+            betaPost <- rep(0,p)
+            betaPost[whichPostboth] <- coef(glmPost, s=lam2, exact=TRUE,
+                                            x=Xacc[,whichPostboth, drop=FALSE],y=Y,
+                                            offset = offset, penalty.factor=penfctr[whichPostboth],
+                                            family=fml,intercept= intrcpt,thresh = 10^-10)[-1]
+            glmPost$a0 <- coef(glmPost, s=lam2, exact=TRUE,
+                               x=Xacc[,whichPostboth, drop=FALSE],y=Y,
+                               offset = offset, penalty.factor=penfctr[whichPostboth],
+                               family=fml,intercept= intrcpt,thresh = 10^-10)[1]
           }
-          betaPost <- rep(0,p)
-          betaPost[whichPostboth] <- as.vector(glmPost$beta)
+          # betaPost <- rep(0,p)
+          # betaPost[whichPostboth] <- as.vector(glmPost$beta)
           indPostpen <- whichPostboth[pen] #penalised covariates in range 1:length(pen) that are selected and non-zero
           indPostp <- whichPostboth&((1:p)%in%pen) #penalised covariates in range 1:p that are selected and non-zero
           betaPost[indPostp] <- c(1/sqrt(lambdap[indPostp]/sigmahat*tauglobal)) * betaPost[indPostp] + muhatp[indPostp]
@@ -3378,17 +3666,33 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           }
           if(model=="cox"){
             glmPost <- glmnet::glmnet(X[,whichPostboth, drop=FALSE],as.matrix(Y),alpha=0,
-                            lambda = lam2,family=fml,
+                            #lambda = lam2,
+                            family=fml,
                             offset = offset ,standardize = FALSE,
-                            penalty.factor=penfctr[whichPostboth], thresh=10^-10)
+                            penalty.factor=penfctr[whichPostboth])
+            betaPost <- rep(0,p)
+            betaPost[whichPostboth] <- coef(glmPost, s=lam2, exact=TRUE,
+                                            x=X[,whichPostboth, drop=FALSE],y=as.matrix(Y),
+                                            offset = offset, penalty.factor=penfctr[whichPostboth],
+                                            family=fml,thresh = 10^-10)
           }else{
             glmPost <- glmnet::glmnet(X[,whichPostboth, drop=FALSE],Y,alpha=0,
-                            lambda = lam2,family=fml,
+                            #lambda = lam2,
+                            family=fml,
                             intercept = intrcpt, standardize = FALSE,
-                            penalty.factor=penfctr[whichPostboth], thresh=10^-10)
+                            penalty.factor=penfctr[whichPostboth])
+            betaPost <- rep(0,p)
+            betaPost[whichPostboth] <- coef(glmPost, s=lam2,exact=TRUE,
+                                            x=X[,whichPostboth, drop=FALSE],y=Y,
+                                            penalty.factor=penfctr[whichPostboth],
+                                            family=fml,intercept= intrcpt,thresh = 10^-10)[-1]
+            glmPost$a0 <- coef(glmPost, s=lam2, exact=TRUE,
+                               x=X[,whichPostboth, drop=FALSE],y=Y,
+                               penalty.factor=penfctr[whichPostboth],
+                               family=fml,intercept= intrcpt,thresh = 10^-10)[1]
           }
-          betaPost <- rep(0,p)
-          betaPost[whichPostboth] <- as.vector(glmPost$beta)
+          # betaPost <- rep(0,p)
+          # betaPost[whichPostboth] <- as.vector(glmPost$beta)
           indPostpen <- whichPostboth[pen] #penalised covariates in range 1:length(pen) that are selected and non-zero
           indPostp <- whichPostboth&((1:p)%in%pen) #penalised covariates in range 1:p that are selected and non-zero
           
@@ -3444,12 +3748,14 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
       }else{ 
         #retrieve exactly maxsel non-zero covariates
         if(length(intrcpt==0)||intrcpt==0){intrcpt <- FALSE}else{intrcpt <- TRUE}
+        glmPost <- glmnet::glmnet(x=Xacc[,nonzeros],y=Ygamma,alpha=1,
+                                  #lambda = lam1,
+                                  family="gaussian",
+                                  intercept = intrcpt, standardize = FALSE,
+                                  penalty.factor=penfctr[nonzeros])
         fsel <- function(lam1,maxselec=maxsel2){
-          glmPost <- glmnet::glmnet(x=Xacc[,nonzeros],y=Ygamma,alpha=1,
-                            lambda = lam1,family="gaussian",
-                            intercept = intrcpt, standardize = FALSE,
-                            penalty.factor=penfctr[nonzeros], thresh=10^-10)
-          return(sum(as.vector(glmPost$beta) !=0) - maxselec)
+          return(sum(coef(glmPost, s=lam1, exact=TRUE,x=Xacc[,nonzeros],y=Ygamma,
+                          penalty.factor=penfctr[nonzeros],intercept= intrcpt,thresh = 10^-10)[-1] !=0) - maxselec)
         }
       }
       
@@ -3498,17 +3804,20 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
             whichPost <- which(betaPost!=0 & ((1:p)%in%pen))
             a0 <- glmPost$a0[takelam]
           }else{
-            lam1 <- uniroot(fsel,maxselec=x, interval = c(0, max(lambdap[lambdap<Inf],na.rm=TRUE)*sigmahat/n), 
+            lam1 <- uniroot(fsel,maxselec=x, interval=range(c(glmPost$lambda,c(0, max(lambdap[lambdap<Inf],na.rm=TRUE)*sigmahat/n))),
                             maxiter = 200,tol=10^(-10))$root
             glmPost <- glmnet::glmnet(x=Xacc[,nonzeros],y=Ygamma,alpha=1,
-                              lambda = lam1,family="gaussian",
+                              #lambda = lam1,
+                              family="gaussian",
                               intercept = intrcpt, standardize = FALSE,
-                              penalty.factor=penfctr[nonzeros], thresh=10^-10)
+                              penalty.factor=penfctr[nonzeros])
             betaPost <- rep(0,p)
-            betaPost[nonzeros]<- as.vector(glmPost$beta)
+            betaPost[nonzeros]<- coef(glmPost, s=lam1, exact=TRUE, x=Xacc[,nonzeros],y=Ygamma,
+                                      penalty.factor=penfctr[nonzeros],intercept= intrcpt,thresh = 10^-10)[-1]
             betaPost[pen] <- c(sqrt(abs(beta[pen]))) * betaPost[pen]
             whichPost <- which(betaPost!=0 & ((1:p)%in%pen))
-            a0<-glmPost$a0
+            a0<- coef(glmPost, s=lam1, exact=TRUE, x=Xacc[,nonzeros],y=Ygamma,
+                      penalty.factor=penfctr[nonzeros],intercept= intrcpt,thresh = 10^-10)[1]
           }
           
           output<-list()
@@ -3575,15 +3884,15 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
       
       #first fit for range of lambda 
       glmPost <- glmnet::glmnet(Xstar,Ystar,alpha=1,family="gaussian",
-                      standardize = FALSE,intercept= FALSE, thresh=10^-10)
+                      standardize = FALSE,intercept= FALSE)
      
       output<-lapply(maxsel2,function(x){
         fsel <- function(lambda,maxselec = x){
-          fit<-glmnet::coef.glmnet(glmPost,s=lambda,exact=TRUE,x=Xstar,y=Ystar)
+          fit<-glmnet::coef.glmnet(glmPost,s=lambda,exact=TRUE,x=Xstar,y=Ystar,thresh = 10^-10)
           return(sum(fit!=0)- maxselec) #number of non-zero penalised covariates
         }
         lambda <- uniroot(fsel, interval = c(0, max(glmPost$lambda)), maxiter = 200,tol=10^(-10))$root
-        fit<-glmnet::coef.glmnet(glmPost,s=lambda,exact=TRUE,x=Xstar,y=Ystar)
+        fit<-glmnet::coef.glmnet(glmPost,s=lambda,exact=TRUE,x=Xstar,y=Ystar,thresh = 10^-10)
       
         if(grepl("same",postselection)){
           if(x==maxsel2[1]) if(!silent) print("Selected covariates are not refit, unpenalised covariates are kept the same")
@@ -3677,18 +3986,35 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
 
           if(model=="cox"){
             glmPost <- glmnet::glmnet(Xacc[,indAll, drop=FALSE],as.matrix(Y),alpha=0,
-                            lambda = lam2*2,family=fml,
+                            #lambda = lam2,
+                            family=fml,
                             offset = offset ,standardize = FALSE,
-                            penalty.factor=penfctr[indAll], thresh=10^-10)
+                            penalty.factor=penfctr[indAll])
+            betaPost <- rep(0,p)
+            betaPost[indAll] <- coef(glmPost, s=lam2, exact=TRUE, 
+                                     x=Xacc[,indAll, drop=FALSE],y=as.matrix(Y),
+                                     offset = offset, penalty.factor=penfctr[indAll],family=fml,thresh = 10^-10)
+            betaPost[indPost] <- c(1/sqrt(lambdap[indPost]/lambdaoverall)) * betaPost[indPost] + muhatp[indPost]
           }else{
             glmPost <- glmnet::glmnet(Xacc[,indAll, drop=FALSE],Y,alpha=0,
-                            lambda = lam2,family=fml,
+                            #lambda = lam2,
+                            family=fml,
                             offset = offset , intercept = intrcpt, standardize = FALSE,
-                            penalty.factor=penfctr[indAll], thresh=10^-10)
+                            penalty.factor=penfctr[indAll])
+            betaPost <- rep(0,p)
+            betaPost[indAll] <- coef(glmPost, s=lam2, exact=TRUE,
+                                     x=Xacc[,indAll, drop=FALSE], y=Y,
+                                     offset = offset, penalty.factor=penfctr[indAll],
+                                     family=fml,intercept= intrcpt,thresh = 10^-10)[-1]
+            glmPost$a0 <- coef(glmPost, s=lam2, exact=TRUE,
+                               x=Xacc[,indAll, drop=FALSE], y=Y,
+                               offset = offset, penalty.factor=penfctr[indAll],
+                               family=fml,intercept= intrcpt,thresh = 10^-10)[1]
+            betaPost[indPost] <- c(1/sqrt(lambdap[indPost]/lambdaoverall)) * betaPost[indPost] + muhatp[indPost]
           }
-          betaPost <- rep(0,p)
-          betaPost[indAll] <- as.vector(glmPost$beta)
-          betaPost[indPost] <- c(1/sqrt(lambdap[indPost]/lambdaoverall)) * betaPost[indPost] + muhatp[indPost]
+          # betaPost <- rep(0,p)
+          # betaPost[indAll] <- as.vector(glmPost$beta)
+          # betaPost[indPost] <- c(1/sqrt(lambdap[indPost]/lambdaoverall)) * betaPost[indPost] + muhatp[indPost]
         }else{ #sparse; refit with newly cross-validated lambda
           if(model=="cox"){
             lambdaGLM<-glmnet::cv.glmnet(X[,indAll, drop=FALSE],as.matrix(Y),alpha=0,family=fml,
@@ -3701,17 +4027,33 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           }
           if(model=="cox"){
             glmPost <- glmnet::glmnet(X[,indAll, drop=FALSE],as.matrix(Y),alpha=0,
-                            lambda = lam2,family=fml,
+                            #lambda = lam2,
+                            family=fml,
                             offset = offset ,standardize = FALSE,
-                            penalty.factor=penfctr[indAll], thresh=10^-10)
+                            penalty.factor=penfctr[indAll])
+            betaPost <- rep(0,p)
+            betaPost[indAll] <- coef(glmPost, s=lam2, exact=TRUE,
+                                     x=X[,indAll, drop=FALSE],y=as.matrix(Y),
+                                     offset = offset, penalty.factor=penfctr[indAll],
+                                     family=fml,thresh = 10^-10)
           }else{
             glmPost <- glmnet::glmnet(X[,indAll, drop=FALSE],Y,alpha=0,
-                            lambda = lam2,family=fml,
+                            #lambda = lam2,
+                            family=fml,
                             intercept = intrcpt, standardize = FALSE,
-                            penalty.factor=penfctr[indAll], thresh=10^-10)
+                            penalty.factor=penfctr[indAll])
+            betaPost <- rep(0,p)
+            betaPost[indAll] <- coef(glmPost, s=lam2, exact=TRUE,
+                                     x=X[,indAll, drop=FALSE],y=Y,
+                                     penalty.factor=penfctr[indAll],
+                                     family=fml,intercept= intrcpt,thresh = 10^-10)[-1]
+            glmPost$a0 <- coef(glmPost, s=lam2, exact=TRUE,
+                               x=X[,indAll, drop=FALSE],y=Y,
+                               penalty.factor=penfctr[indAll],
+                               family=fml,intercept= intrcpt,thresh = 10^-10)[1]
           }
-          betaPost <- rep(0,p)
-          betaPost[indAll] <- as.vector(glmPost$beta)
+          # betaPost <- rep(0,p)
+          # betaPost[indAll] <- as.vector(glmPost$beta)
         }
         
         whichPost <- indPost
@@ -4110,8 +4452,8 @@ createGroupset <- function(values,index=NULL,grsize=NULL,ngroup=10,
          },
          'st'={ #sigma, tau unknown, lambda, mu known
            #MMLE sigma known analytically
+           XtDinvX <- multiridge::SigmaFromBlocks(XXblocks = list(XXt),lambda)
            if(length(dim(Xunpen))>0 | intrcpt){
-             XtDinvX <- multiridge::SigmaFromBlocks(XXblocks = list(XXt),lambda)
              if(intrcpt) Xunpen <- cbind(Xunpen,rep(1,n))
              if(intrcpt && dim(Xunpen)[2]==1){
                betaunpenML <- sum(Y)/n
