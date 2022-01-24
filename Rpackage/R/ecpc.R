@@ -3085,11 +3085,14 @@ ecpc <- function(Y,X,
       if(intrcpt){
         if(model=="linear"){
           glmGR <- list(a0=sum(Y-X%*%beta)/n)
+          a0 <- sum(Y-X%*%beta)/n
         }else if(model=='logistic'){
           glmGR <- list(a0=sum(Y-exp(X%*%beta)/(1+exp(X%*%beta)))/n) 
+          a0 <- sum(Y-exp(X%*%beta)/(1+exp(X%*%beta)))/n
         }
       }else{
-        glmGR <- list(a0=0)
+        glmGR <- list(a0=NULL)
+        a0 <- NULL
       }
       warning("All regression coefficients (set to) 0 due too large penalties")
     }else{
@@ -3119,6 +3122,7 @@ ecpc <- function(Y,X,
                        offset = X[,!((1:p)%in%unpen)] %*% muhatp[!((1:p)%in%unpen)],
                        penalty.factor=penfctr) 
           beta[pen] <- c(1/sqrt(lambdap[pen]/lambdaoverall)) * beta[pen] + muhatp[pen]
+          a0 <- NULL
         }else{
           glmGR <- glmnet::glmnet(Xacc,Y,alpha=0,
                           #lambda = lambdaoverall/n*sd_y2,
@@ -3147,10 +3151,12 @@ ecpc <- function(Y,X,
         # } 
       }else{ #use multiridge package to estimate betas
         lambdaoverall <- exp(mean(log(sigmahat/tauglobal[datablockNo[pen]])))
+        minlam <- max(mean(lambdap[pen][lambdap[pen]<Inf]) , 10^-5)
+        if(lambdaoverall<minlam) lambdaoverall <- minlam
         Xacc <- X
         Xacc[,pen] <- as.matrix(X[,pen] %*% Matrix::sparseMatrix(i=1:length(pen),j=1:length(pen),
                                                                  x=c(1/sqrt(lambdap[pen]/lambdaoverall))))
-        XXbl <- list(Xacc%*%t(Xacc)) 
+        XXbl <- list(Xacc%*%t(Xacc))
         #Compute betas
         XXT <- multiridge::SigmaFromBlocks(XXbl,penalties=lambdaoverall) #create nxn Sigma matrix = sum_b [lambda_b)^{-1} X_b %*% t(X_b)]
         if(model!="cox"){
@@ -3166,22 +3172,28 @@ ecpc <- function(Y,X,
             fit <- multiridge::IWLSCoxridge(XXT,Y=Y) #Fit. fit$etas contains the n linear predictors
           }
         }
-        
+
         betas <- multiridge::betasout(fit, Xblocks=list(Xacc[,pen]), penalties=lambdaoverall) #Find betas.
         a0 <- c(betas[[1]][1]) #intercept
-        beta <- rep(0,p) 
+        beta <- rep(0,p)
         beta[(1:p)%in%unpen] <- betas[[1]][-1] #unpenalised variables
         beta[pen] <- betas[[2]]
         beta[pen] <- c(1/sqrt(lambdap[pen]/lambdaoverall)) * beta[pen]
         rm(betas)
+
+        
       }
     }
     
     #-3.3.6 Update predictions on independent data (if given) ################################################
     if(!missing(X2)){
+      if(intrcpt){
+        X2c <- cbind(X2,rep(1,n2))
+      }else{
+        X2c <- X2
+      }
       #Ypredridge <- predict(glmGR,newx=X2)
       if(model=="linear"){
-        X2c <- cbind(X2,rep(1,n2))
         YpredGR[,Itr+1] <- X2c %*% c(beta,a0)
         MSEecpc[Itr+1]<- sum((YpredGR[,Itr+1]-Y2)^2)/n2
       } 
@@ -3252,6 +3264,7 @@ ecpc <- function(Y,X,
                           family=fml,
                           penalty.factor=penfctr)
         betaridge[pen] <- c(1/sqrt(lambdaridge[datablockNo[pen]]/lambdaoverall)) * betaridge[pen]
+        a0_ridge <- NULL
       }else{
         glmR <- glmnet::glmnet(X,Y,family=fml,alpha=0,
                                #lambda=lambdaoverall*sd_y/n,
@@ -3297,14 +3310,17 @@ ecpc <- function(Y,X,
     if(!missing(X2)){
       #Ypredridge <- predict(glmR,newx=X2)
       #browser()
-      
-      if(model=="linear"){
+      if(intrcptGLM){
         X2c <- cbind(X2,rep(1,n2))
+      }else{
+        X2c <- X2
+        a0_ridge <- NULL
+      }
+      if(model=="linear"){
         Ypredridge <- X2c %*% c(betaridge,a0_ridge)
         MSEridge <- sum((Ypredridge-Y2)^2)/n2
       } 
       if(model=='logistic'){
-        X2c <- cbind(X2,rep(1,n2))
         Ypredridge <- 1/(1+exp(-X2c %*% c(betaridge,a0_ridge)))
         MSEridge <- sum((Ypredridge-Y2)^2)/n2
       }else if(model=="cox"){
