@@ -584,9 +584,8 @@ ecpc <- function(Y,X,
                if(sum(penfctr==0)>0){
                  Xunpen <- X[,penfctr==0]
                }
-               
                par <- .mlestlin(Y=Y,XXt=XXt,Xrowsum=Xrowsum,
-                                intrcpt=FALSE,Xunpen=NULL, #TD: adapt for intercept and Xunpen
+                                intrcpt=intrcpt,Xunpen=Xunpen, 
                                 lambda=lambda,sigmasq=sigmasq,mu=mutrgt,tausq=tausq) #use maximum marginal likelihood
 
                lambda <- par[1] 
@@ -624,11 +623,16 @@ ecpc <- function(Y,X,
                  lambdap <- rep(lambda,p) #px1 vector with penalty for each beta_k, k=1,..,p
                  lambdap[(1:p)%in%unpen] <- 0
                  
+                 Xunpen <- NULL #if empty vector, no unpenalised and no intercept
+                 if(sum(penfctr==0)>0){
+                   Xunpen <- X[,penfctr==0]
+                 }
+                 
                  #re-estimate sigma and tau_global for new lambda value
                  Xrowsum <- apply(X,1,sum)
                  XXt <- X[,penfctr!=0]%*%t(X[,penfctr!=0])
                  par <- .mlestlin(Y=Y,XXt=XXt,Xrowsum=Xrowsum,
-                                  intrcpt=FALSE,Xunpen=NULL, #TD: adapt for intercept and Xunpen
+                                  intrcpt=intrcpt,Xunpen=Xunpen, #TD: adapt for intercept and Xunpen
                                   lambda=lambda,sigmasq=NaN,mu=mutrgt,tausq=tausq) #use maximum marginal likelihood
                  sigmahat <- par[2] #sigma could be optimised with CV in the end if not known
                  gamma[,1] <- par[4]
@@ -756,7 +760,7 @@ ecpc <- function(Y,X,
                                            penalty.factor=penfctr)
                #minlam <- min(glmGRtrgt$lambda)*n/sd_y
                if(lambda < minlam){
-                 warning("Estimated lambda value found too small, set to minimum to for better numerical performance")
+                 warning("Estimated lambda value found too small, set to minimum for better numerical performance")
                  lambda <- minlam
                  lambdap <- rep(lambda,p) #px1 vector with penalty for each beta_k, k=1,..,p
                  lambdap[(1:p)%in%unpen] <- 0
@@ -928,7 +932,7 @@ ecpc <- function(Y,X,
       #Deltac <- diag(c(lambdap,0))
       Deltac <- Matrix::sparseMatrix(i=1:(length(lambdap)+1),j=1:(length(lambdap)+1),x=c(lambdap,0))
       if(model=="logistic"){
-        Deltac<-2*Deltac
+        #Deltac<-2*Deltac
         #reweight Xc for logistic model
         expminXb<-exp(-Xcinit%*%c(betasinit,intrcptinit))
         Pinit<-1/(1+expminXb)
@@ -939,7 +943,7 @@ ecpc <- function(Y,X,
       #Deltac <- diag(c(lambdap))
       Deltac <- Matrix::sparseMatrix(i=1:length(lambdap),j=1:length(lambdap),x=c(lambdap))
       if(model=="logistic"){
-        Deltac<-2*Deltac
+        #Deltac<-2*Deltac
         #reweight Xc for logistic model
         expminXb<-exp(-Xcinit%*%c(betasinit))
         Pinit<-1/(1+expminXb)
@@ -947,7 +951,7 @@ ecpc <- function(Y,X,
         Xc<-W%*%Xcinit
       }
       if(model=="cox"){
-        Deltac<-2*Deltac
+        #Deltac<-2*Deltac
         #reweight Xc for cox model
         expXb<-exp(Xcinit%*%c(betasinit))
         h0 <- sapply(1:length(Y[,1]),function(i){Y[i,2]/sum(expXb[Y[,1]>=Y[i,1]])})#updated baseline hazard in censored times for left out samples
@@ -3180,7 +3184,19 @@ ecpc <- function(Y,X,
         beta[pen] <- betas[[2]]
         beta[pen] <- c(1/sqrt(lambdap[pen]/lambdaoverall)) * beta[pen]
         rm(betas)
-
+        
+        # browser()
+        # #here it is the same for different global lambda as it should
+        # #note: not for when intercept is included
+        # Xacc <- X
+        # Xacc[,pen] <- as.matrix(X[,pen] %*% Matrix::sparseMatrix(i=1:length(pen),j=1:length(pen),
+        #                                                          x=c(1/sqrt(lambdap[pen]/lambdaoverall))))
+        # Xacc <- cbind(Xacc,rep(1,n))
+        # beta <- solve(t(Xacc)%*%Xacc + diag(c(rep(lambdaoverall,p))), t(Xacc)%*%Y)
+        # a0 <- rev(beta)[1]
+        # beta <- rev(rev(beta)[-1])
+        # beta[pen] <- c(1/sqrt(lambdap[pen]/lambdaoverall)) * beta[pen]
+        # beta2<-beta
         
       }
     }
@@ -4357,6 +4373,19 @@ createGroupset <- function(values,index=NULL,grsize=NULL,ngroup=10,
            tausq <- exp(op$par[1]); sigmasq <- minsig + exp(op$par[2])
            lambda <- sigmasq/tausq
            
+           #when sigma is too small, set estimate to be the largest that is 
+           #still close to the minimum value
+           if(sigmasq < 10^-4*maxv){
+             lb <- sim2(log(c(tausq,10^-6)))
+             ub <- sim2(log(c(tausq,2*maxv)))
+             abstol <- 10^-3*abs(ub-lb)
+             froot <- function(sigmasq){
+               sim2(log(c(tausq,sigmasq))) - op$value - abstol
+             }
+             sigmasq <- uniroot(froot,c(sigmasq,2*maxv))$root
+             lambda <- sigmasq/tausq
+           }
+           
            # #optimise over lambda, and sigmahat given lambda
            # minlam <- 10^-3
            # sim2 = function(ts){
@@ -4450,6 +4479,37 @@ createGroupset <- function(values,index=NULL,grsize=NULL,ngroup=10,
            #browser()
            tausq <- exp(op$par[1])
            lambda <- sigmasq/tausq
+           
+           # sigmarange <- 10^seq(-5,5,length.out=20)
+           # taurange <- sapply(sigmarange, function(x){
+           #   sigmasq <- x
+           #   sim2 = function(ts){
+           #     tausq<-exp(ts[1]);
+           #     varY <- XXt * tausq + diag(rep(1,n))*sigmasq
+           #     meanY <- mu*Xrowsum 
+           #     
+           #     #compute unpenalised variable estimates given lambda, sigma, tausq
+           #     #add this to meanY
+           #     if(length(dim(Xunpen))>0 | intrcpt){
+           #       XtDinvX <- multiridge::SigmaFromBlocks(XXblocks = list(XXt),sigmasq/tausq)
+           #       if(intrcpt) Xunpen <- cbind(Xunpen,rep(1,n))
+           #       if(intrcpt && dim(Xunpen)[2]==1){
+           #         betaunpenML <- sum(Y)/n
+           #       }else{
+           #         temp <- solve(XtDinvX+diag(rep(1,n)),Xunpen)
+           #         betaunpenML <- solve(t(Xunpen)%*%temp , t(temp)%*%Y)
+           #       }
+           #       meanY <- meanY + Xunpen%*%betaunpenML
+           #     }
+           #     
+           #     mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=TRUE)
+           #     return(mlk)
+           #   }
+           #   op <- optim(c(log(0.01)),sim2,method="Brent",lower=log(1e-5),upper=log(10^6))
+           #   tausq <- exp(op$par[1])
+           #   return(tausq)
+           # })
+           # lambda <- sigmarange/taurange
          },
          'smt'={ #sigma, tau, mu unknown, lambda known
            sim2 = function(ts){
@@ -4534,12 +4594,31 @@ createGroupset <- function(values,index=NULL,grsize=NULL,ngroup=10,
                meanY <- meanY + Xunpen%*%betaunpenML
              }
              
-             mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=TRUE)
+             mlk <- -mvtnorm::dmvnorm(c(Y),mean=meanY,sigma=varY,log=TRUE) 
              return(mlk)
            }
            op <- optim(c(log(maxv)),sim2,method="Brent",lower=log(1e-6),upper=log(2*maxv))
            sigmasq <- exp(op$par[1])
            lambda <- sigmasq/tausq
+           
+           #when sigma is too small, set estimate to be the largest that is 
+           #still close to the minimum value
+           if(sigmasq < 10^-4*maxv){
+             lb <- sim2(log(10^-6))
+             ub <- sim2(log(2*maxv))
+             abstol <- 10^-3*abs(ub-lb)
+             froot <- function(sigmasq){
+               sim2(log(sigmasq)) - op$value - abstol
+             }
+             sigmasq <- uniroot(froot,c(sigmasq,2*maxv))$root
+             lambda <- sigmasq/tausq
+
+             # sigmarange <- exp(seq(-5,5,length.out=20))
+             # ML <- sapply(log(sigmarange),sim2)
+             # plot(log(sigmarange),ML)
+             # abline(v=log(sigmasq),col="red")
+           }
+           
          },
          'm'={ #mean unknown, lambda, sigma, tau known
            sim2 = function(ts){
