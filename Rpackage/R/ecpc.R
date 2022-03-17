@@ -240,7 +240,12 @@ ecpc <- function(Y,X,
       }
     }
     if(dim(Zt)[2]<p) Zt <- cbind(Zt,matrix(rep(NaN,(p-dim(Zt)[2])*sum(G)),c(sum(G),p-dim(Zt)[2])))
-    PenGrps <- as.matrix(Zt[,!((1:p)%in%unpen)]%*%Matrix::t(Zt[,!((1:p)%in%unpen)])) #penalty matrix groups
+    if(G>1){
+      PenGrps <- as.matrix(Zt[,!((1:p)%in%unpen)]%*%Matrix::t(Zt[,!((1:p)%in%unpen)])) #penalty matrix groups
+    }else{
+      PenGrps <- matrix(sum(Zt^2),c(1,1))
+    } 
+    
   }else{ #settings when co-data is provided in list Z
     if(!is.list(Z)) stop("Provide co-data Z as a list of co-data matrices")
     m <- length(Z)
