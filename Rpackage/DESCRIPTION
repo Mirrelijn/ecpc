@@ -26,4 +26,4 @@ Description: Fit linear, logistic and Cox survival regression models penalised w
   The name 'ecpc' stands for Empirical Bayes, Co-data learnt, Prediction and Covariate selection.
   See Van Nee et al. (2020) <arXiv:2005.04010>.
 License: GPL (>= 3)
-URL: https://arxiv.org/abs/2005.0401
+URL: https://arxiv.org/abs/2005.04010
