@@ -2851,7 +2851,7 @@ ecpc <- function(Y,X,
                   #solve with constraint w>=0
                   gammatilde<-rep(0,m)
                   w <- try(pracma::lsqlincon(C=Atilde, d=Btau,lb=0),silent=TRUE)
-                  if(class(w)=="try-error") w <- rep(0,m)
+                  if(class(w)[1]=="try-error") w <- rep(0,m)
                   gammatilde <- w
                   gamma <- w
                 }
@@ -4166,7 +4166,7 @@ produceFolds <- function(nsam,outerfold,response,model=c("logistic", "cox", "oth
       return(els)
     }
     )} else {  #balanced folds
-      if(model=="logistic") if(class(response)=="factor") nev <- which((as.numeric(response)-1)==1) else nev <- which(response==1)  
+      if(model=="logistic") if(class(response)[1]=="factor") nev <- which((as.numeric(response)-1)==1) else nev <- which(response==1)  
       if(model=="cox") nev <- which(response[,2]==1)    
       nsamev <- length(nev) 
       randev<-sample(nev)
