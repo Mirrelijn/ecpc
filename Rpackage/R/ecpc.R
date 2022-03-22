@@ -240,10 +240,10 @@ ecpc <- function(Y,X,
       }
     }
     if(dim(Zt)[2]<p) Zt <- cbind(Zt,matrix(rep(NaN,(p-dim(Zt)[2])*sum(G)),c(sum(G),p-dim(Zt)[2])))
-    if(G>1){
-      PenGrps <- as.matrix(Zt[,!((1:p)%in%unpen)]%*%Matrix::t(Zt[,!((1:p)%in%unpen)])) #penalty matrix groups
-    }else{
+    if(length(G)==1 && G==1){
       PenGrps <- matrix(sum(Zt^2),c(1,1))
+    }else{
+      PenGrps <- as.matrix(Zt[,!((1:p)%in%unpen)]%*%Matrix::t(Zt[,!((1:p)%in%unpen)])) #penalty matrix groups
     } 
     
   }else{ #settings when co-data is provided in list Z
@@ -579,7 +579,6 @@ ecpc <- function(Y,X,
              #Use ML for sigma estimation and/or initial lambda (tausq) estimate and/or mu
              if(is.nan(sigmasq) | (!is.nan(compare) & grepl("ML",compare)) | grepl("ML",lambda) | is.nan(mutrgt)){
                #Estimate sigma^2, lambda and initial estimate for tau^2 (all betas in one group), mu=0 by default
-               #NOTE, TD: not yet possible to include unpenalised covariates in MML
                if(grepl("ML",lambda)){ lambda <- NaN}
                Xrowsum <- apply(X,1,sum)
                
@@ -590,7 +589,7 @@ ecpc <- function(Y,X,
                  Xunpen <- X[,penfctr==0]
                }
                par <- .mlestlin(Y=Y,XXt=XXt,Xrowsum=Xrowsum,
-                                intrcpt=intrcpt,Xunpen=Xunpen, 
+                                intrcpt=FALSE,Xunpen=NULL,  #TD: unpenalised+intercept 
                                 lambda=lambda,sigmasq=sigmasq,mu=mutrgt,tausq=tausq) #use maximum marginal likelihood
 
                lambda <- par[1] 
@@ -995,7 +994,6 @@ ecpc <- function(Y,X,
         CP1<- diag(1,n)
         Xpen <- as.matrix(Xc[,pen]%*%Matrix::sparseMatrix(i=1:length(pen),j=1:length(pen),x=Matrix::diag(Deltac)[pen]^(-0.5)))
       }
-      
       svdX<-svd(Xpen) #X=UDV^T=RV^T
       svdXR<-svdX$u%*%diag(svdX$d) #R=UD
       L2 <- as.matrix(Matrix::sparseMatrix(i=1:length(pen),j=1:length(pen),
@@ -3215,12 +3213,12 @@ ecpc <- function(Y,X,
       }
       #Ypredridge <- predict(glmGR,newx=X2)
       if(model=="linear"){
-        YpredGR[,Itr+1] <- X2c %*% c(beta,a0)
+        YpredGR[,Itr+1] <- X2 %*% beta + a0
         MSEecpc[Itr+1]<- sum((YpredGR[,Itr+1]-Y2)^2)/n2
       } 
       if(model=='logistic'){
         X2c <- cbind(X2,rep(1,n2))
-        YpredGR[,Itr+1] <- 1/(1+exp(-X2c %*% c(beta,a0)))
+        YpredGR[,Itr+1] <- 1/(1+exp(-X2 %*% beta - a0))
         MSEecpc[Itr+1]<- sum((YpredGR[,Itr+1]-Y2)^2)/n2
         if(any(is.nan(YpredGR[,Itr+1]))){browser()}
       }else if(model=='cox'){ 

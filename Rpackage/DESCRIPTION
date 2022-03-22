@@ -2,7 +2,7 @@ Package: ecpc
 Type: Package
 Title: Flexible Co-Data Learning for High-Dimensional Prediction
 Version: 3.0
-Date: 2021-11-11
+Date: 2022-03-22
 Authors@R: c(person(c("Mirrelijn","M."), "van Nee", role = c("aut", "cre"),
                      email = "m.vannee@amsterdamumc.nl"),
               person(c("Lodewyk","F.A."), "Wessels", role = "aut"),
