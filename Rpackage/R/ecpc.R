@@ -589,7 +589,7 @@ ecpc <- function(Y,X,
                  Xunpen <- X[,penfctr==0]
                }
                par <- .mlestlin(Y=Y,XXt=XXt,Xrowsum=Xrowsum,
-                                intrcpt=FALSE,Xunpen=NULL,  #TD: unpenalised+intercept 
+                                intrcpt=FALSE,Xunpen=NULL,  #Ignore unpenalised/intercept for initialisation
                                 lambda=lambda,sigmasq=sigmasq,mu=mutrgt,tausq=tausq) #use maximum marginal likelihood
 
                lambda <- par[1] 
