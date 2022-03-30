@@ -75,6 +75,108 @@ ecpc <- function(Y,X,
     est_beta_method <- "glmnet"
   }
 
+  #-1.1 Check variable input is as expected--------------------------------------------------
+  #check response
+  assert(checkVector(Y), checkMatrix(Y), checkArray(Y, max.d=2))
+  assert(checkLogical(Y), checkFactor(Y, n.levels=2), checkNumeric(Y))
+  
+  #check observed data
+  assert(checkMatrix(X), checkArray(X, max.d=2))
+  assertNumeric(X)
+  
+  #check whether dimensions Y and X match
+  if(checkVector(Y)){
+    if(length(Y)!=dim(X)[1]) stop("Length of vector Y should equal number of rows in X")
+  }else{
+    if(dim(Y)[1]!=dim(X)[1]) stop("Number of rows in Y and X should be the same")
+  }
+  
+  #check co-data provided in either Z or groupsets and check format
+  if(!is.null(Z)&!is.null(groupsets)){
+    stop("Provide co-data either in Z or in groupsets, both not possible")
+  }else if(is.null(Z)&is.null(groupsets)){
+    print("No co-data provided. Regular ridge is computed corresponding to an 
+          intercept only co-data model.")
+    groupsets <- list(list(1:p))
+  }else if(!is.null(Z)){
+    #check if Z is provided as list of (sparse) matrices/arrays
+    assertList(Z, types=c("vector", "matrix", "array", "dgCMatrix"), min.len=1)
+    for(g in 1:length(Z)){
+      assert(checkNumeric(Z[[g]]), class(Z[[g]])[1]=="dgCMatrix")
+      if(is.vector(Z[[g]])) Z[[g]] <- matrix(Z[[g]],length(Z[[g]]),1)
+      #check if number of rows of Z match number of columns X
+      if(dim(Z[[g]])[1]!=dim(X)[2]){
+        stop(paste("The number of rows of co-data matrix",g, "should equal the 
+                   number of columns of X, including (missing) co-data values for 
+                   unpenalised variables."))
+      } 
+      #check number of co-data variables < variables
+      if(dim(Z[[g]])[2] > dim(X)[2]){
+        stop("Number of co-data variables in Z should be smaller than number of 
+             variables in X")
+      } 
+      
+      #check paraPen 
+      assertList(paraPen, types="list", null.ok = TRUE) #should be NULL or list
+      if(!is.null(paraPen)){
+        #check if names match Zi, i=1,2,..
+        assertSubset(names(paraPen), paste("Z", 1:length(Z), sep=""), empty.ok=FALSE)
+        for(g in 1:length(Z)){
+          nameZg <- paste("Z",g,sep="")
+          if(nameZg%in%names(paraPen)){
+            assertList(paraPen[[nameZg]]) #should be named list
+            #paraPen for mgcv may obtain L, rank, sp, Si with i a number 1,2,3,..
+            assertSubset(names(paraPen[[nameZg]]), 
+                         c("L", "rank", "sp", paste("S",1:length(paraPen[[nameZg]]), sep="")))
+            #elements Si, i=1,2,.. should be matrices and match number of columns of Zg
+            for(nameSg in paste("S",1:length(paraPen[[nameZg]]), sep="")){
+              if(nameSg%in%names(paraPen[[nameZg]])){
+                #check whether Sg is a matrix or 2-dimensional array
+                assert(checkMatrix(paraPen[[nameZg]][[nameSg]]),
+                       checkArray(paraPen[[nameZg]][[nameSg]], d=2))
+                #check square matrix and dimension match co-data matrix
+                if(dim(Z[[g]])[2]!=dim(paraPen[[nameZg]][[nameSg]])[1] |
+                   dim(Z[[g]])[2]!=dim(paraPen[[nameZg]][[nameSg]])[2]){
+                  stop(paste("Dimensions of the square penalty matrix",nameSg,
+                             "should be equal to the number of columns in 
+                             co-data matrix",g))
+                }
+              }
+            }
+          }
+        }
+      } 
+      
+      #check paraCon
+      assertList(paraCon, types="list", null.ok = TRUE) #should be NULL or list
+      if(!is.null(paraCon)){
+        #check if names match Zi, i=1,2,..
+        assertSubset(names(paraCon), paste("Z", 1:length(Z), sep=""), empty.ok=FALSE)
+        for(g in 1:length(Z)){
+          nameZg <- paste("Z",g,sep="")
+          if(nameZg%in%names(paraCon)){
+            assertList(paraCon[[nameZg]], types=c("vector", "matrix", "array")) #should be named list
+            #paraCon may obtain elements ("M.ineq" and "b.ineq") and/or ("M.eq" and "b.eq")
+            namesparaCon <- names(paraCon[[nameZg]])
+            assertSubset(namesparaCon, c("M.ineq", "b.ineq", "M.eq", "b.eq"))
+            if( ("M.ineq"%in%namesparaCon)&!("b.ineq"%in%namesparaCon) |
+                !("M.ineq"%in%namesparaCon)&("b.ineq"%in%namesparaCon)){
+              stop("Neither/both M.ineq and b.ineq should be provided in paraCon")
+            }
+            if( ("M.eq"%in%namesparaCon)&!("b.eq"%in%namesparaCon) |
+                !("M.eq"%in%namesparaCon)&("b.eq"%in%namesparaCon)){
+              stop("Neither/both M.eq and b.eq should be provided in paraCon")
+            }
+          }
+        }
+      }
+    }
+  }else{ #!is.null(groupsets)
+    
+  }
+  #TD: check missing variables+handle it
+  
+  
   #-2. Set-up variables ---------------------------------------------------------------------------
   n <- dim(X)[1] #number of samples
   p <- dim(X)[2] #number of covariates 
@@ -82,12 +184,7 @@ ecpc <- function(Y,X,
   if(!missing(X2)) n2<-dim(X2)[1] #number of samples in independent data set x2 if given
   multi <- FALSE; if(!is.null(datablocks)) multi <- TRUE #use multiple global tau, one for each data block
   
-  if(!is.null(Z)&!is.null(groupsets)){
-    stop("Provide co-data either in Z or in groupsets, both not possible")
-  }else if(is.null(Z)&is.null(groupsets)){
-    print("No co-data provided. Regular ridge is computed corresponding to an intercept only co-data model.")
-    groupsets <- list(list(1:p))
-  }
+
   cont_codata <- FALSE; if(!is.null(Z)) cont_codata <- TRUE
   
   if(class(model)[1]=="family"){
@@ -259,15 +356,9 @@ ecpc <- function(Y,X,
     } 
     
   }else{ #settings when co-data is provided in list Z
-    if(!is.list(Z)) stop("Provide co-data Z as a list of co-data matrices")
     m <- length(Z)
     names(Z) <- paste("Z",1:m,sep="")
     for(i in 1:m){
-      if(is.vector(Z[[i]])) Z[[i]] <- matrix(Z[[i]],length(Z[[i]]),1)
-      if(dim(Z[[i]])[1]!=p) stop("Co-data matrix should contain p-dimensional columns, 
-                                 with p the number of penalised and possibly unpenalised
-                                 variables given in X. Any co-data values for unpenalised 
-                                 variables may be given as those are ignored.") 
       if(length(unpen)>0) Z[[i]][unpen,] <- NaN
     }
     G <- sapply(Z,function(x)dim(x)[2]) #1xm vector with G_i, number of variables in co-data source i
@@ -3470,6 +3561,8 @@ ecpc <- function(Y,X,
       output$YpredPost <- postSel$YpredPost #predictions for independent data set (if given)
     }
   }
+  
+  class(output) <- "ecpc"
   return(output)
 }
 
@@ -5205,7 +5298,8 @@ hierarchicalLasso <- function(X,Y,groupset,lambda=NULL){
 
 ###Plotting functions
 #Visualise group set----
-visualiseGroupset <- function(Groupset,groupweights,groupset.grouplvl,nodeSize=10,ls=1){
+visualiseGroupset <- function(Groupset,groupweights,groupset.grouplvl,
+                              nodeSize=10,ls=1){
   #return ggplot object with graphical visualisation of one group set:
   #graph with nodes, possibly connected if hierarchy is given
   #if group weights are given, nodes are coloured accordingly: 
@@ -5338,7 +5432,8 @@ visualiseGroupset <- function(Groupset,groupweights,groupset.grouplvl,nodeSize=1
 }
 
 #Visualise group set weights in CV folds----
-visualiseGroupsetweights <- function(dfGrps,GroupsetNames,hist=FALSE,boxplot=TRUE,jitter=TRUE,ps=1.5,width=0.5){
+visualiseGroupsetweights <- function(dfGrps,GroupsetNames,hist=FALSE,boxplot=TRUE,
+                                     jitter=TRUE,ps=1.5,width=0.5){
   #Plot cross-validated group set weights
   #
   #Input:
@@ -5434,7 +5529,9 @@ visualiseGroupsetweights <- function(dfGrps,GroupsetNames,hist=FALSE,boxplot=TRU
 }
 
 #Visualise group weights in CV folds----
-visualiseGroupweights <- function(dfGrps,Groupset,groupset.grouplvl,values,widthBoxplot=0.05,boxplot=TRUE,jitter=TRUE,ps=1.5,ls=1){
+visualiseGroupweights <- function(dfGrps,Groupset,groupset.grouplvl,
+                                  values,widthBoxplot=0.05,boxplot=TRUE,
+                                  jitter=TRUE,ps=1.5,ls=1){
   #Plot cross-validated group weights for one group set
   #
   #Input:
