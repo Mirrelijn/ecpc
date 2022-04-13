@@ -18,11 +18,11 @@ ecpc(Y, X,
 Z=NULL, paraPen=NULL, paraCon=NULL, intrcpt.bam=TRUE, bam.method="ML",
 groupsets=NULL, groupsets.grouplvl = NULL, hypershrinkage=NULL, 
 unpen = NULL, intrcpt = TRUE, model=c("linear","logistic","cox"), 
-postselection = "elnet,dense", maxsel = 10, 
-lambda = NULL, fold = 10, sigmasq = NaN, w = NaN, 
-nsplits = 100, weights = TRUE, profplotRSS = FALSE, Y2 = NaN, X2 = NaN, 
+postselection = "elnet,dense", maxsel = 10,
+lambda = NULL, fold = 10, sigmasq = NaN, w = NULL,
+nsplits = 100, weights = TRUE, profplotRSS = FALSE, Y2 = NULL, X2 = NULL,
 compare = TRUE, mu = FALSE, normalise = FALSE, silent = FALSE,
-datablocks = NULL, est_beta_method=c("glmnet","multiridge"))%,standardise_Y=FALSE)
+datablocks = NULL, est_beta_method=c("glmnet","multiridge"))
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
@@ -79,7 +79,7 @@ Should an intercept be included? Included by default for linear and logistic, ex
 }
   \item{model}{
 %%     ~~Describe \code{model} here~~
-Type of model for the response; linear, logistic or Cox.
+Type of model for the response; linear, logistic or cox.
 }
   \item{postselection}{
 %%     ~~Describe \code{postselection} here~~
@@ -167,8 +167,9 @@ A list with the following elements:
   \item{tauglobal}{Estimated global prior variance; scalar (or vector with datatype-specific global prior variances when multiple `datablocks' are given).)}
   \item{gammatilde}{Estimated group weights before truncating negative weights to 0; vector of dimension the total number of groups.}
   \item{gamma}{Final estimated group weights; vector of dimension the total number of groups.}
+  \item{gamma0}{Estimated co-data variable intercept; scalar.}
   \item{w}{Estimated group set weights; m-dimensional vector.}
-  \item{penalties}{Estimated multi-group ridge penalties; p-dimensinional vector.}
+  \item{penalties}{Estimated multi-group ridge penalties; p-dimensional vector.}
   \item{hyperlambdas}{Estimated hyperpenalty parameters used in hypershrinkage; m-dimensional vector.}
   \item{Ypred}{If independent test set 'X2' is given, predictions for the test set.}
   \item{MSEecpc}{If independent test set 'X2', 'Y2' is given, mean squared error of the predictions.}
@@ -185,11 +186,54 @@ If posterior selection is performed;
   \item{YpredPost}{If independent test set 'X2' is given, posterior selection model predictions for the test set.}
   \item{MSEPost}{If independent test set 'X2', 'Y2' is given, mean squared error of the posterior selection model predictions.}
 }
+\details{
+%%%  ~~ If necessary, more details than the description above ~~
+%G1.3
+\strong{Model:}
+
+The response is modeled with a generalised linear model with variance \eqn{Var(Y)=\sigma^2*V(Y)}. For the linear model, \eqn{\sigma^2} is the error variance parameter. For the logistic and Cox model, \eqn{\sigma^2=1}.
+The regression coefficients are independently modeled with a normal prior with prior variance \eqn{v} regressed on (possibly multiple sources of) co-data
+\deqn{\beta~N(0,v),   v = \tau_global^2* sum_d [w_d*Z_d*\gamma_d]}
+with \eqn{\tau_global^2} the global scaling parameter, the scalar \eqn{w_d} the importance weight of co-data set \eqn{d}, \eqn{Z_d} the co-data matrix for source d and \eqn{\gamma_d} the vector of co-data variable weights of source \eqn{d}.
+
+\strong{Co-data and hypershrinkage input:}
+
+Co-data should be provided in a list of co-data matrices given in argument 'Z' or in a list of group sets given in 'groupsets'. The latter may be used only for (overlapping) groups of variables, whereas the first may be used for continuous co-data too. In most cases, providing co-data in 'Z' is faster, so users may want to transform co-data from a group set to a co-data matrix with \code{\link{createZforGroupset}}. 
+
+The co-data variable weights are estimated with an extra level of hypershrinkage, i.e. with a penalised estimator (see below). The type of hypershrinkage may differ per co-data source. Providing these types depends on whether the co-data is provided in 'Z' or 'groupsets'. 
+When co-data is provided in 'Z', the hypershrinkage may be provided in the arguments 'paraPen', 'paraCon', 'intrcpt.bam' and 'bam.method' (second line above in usage).
+When co-data is provided in 'groupsets', the hypershrinkage may be provided in the arguments 'groupsets.grouplvl' and 'hypershrinkage' (third line above in usage).
+
+\strong{Estimation:}
+
+The regression coefficients are estimated by maximising the penalised likelihood (equiv. maximum a posteriori estimate) for estimated prior parameters:
+\deqn{\beta' = argmax_\beta[ loglik + sum_k (\beta_k^2 / (2 v_k) ]}
+
+The prior parameters are estimated from the data using an empirical Bayes approach; \eqn{\tau_global^2} is estimated by maximising the marginal likelihood (linear, default, jointly optimised with \eqn{\sigma^2}) or by cross-validation (linear, logistic, Cox). 
+\eqn{\gamma_d} is estimated per co-data source by finding the minimum (penalised) least squares solution corresponding to the marginal moment equations:
+\deqn{\gamma_d = argmin_\gamma[ ||A\gamma - b||_2^2 + f_pen(\gamma;\lambda_d)]}
+with \eqn{f_pen} some penalty function ('hypershrinkage', see below) depending on hyperpenalty parameter \eqn{\lambda_d}.
+Co-data weights \eqn{w} are estimated with a similar, unpenalised marginal moment estimator.
+
+%G1.1
+'ecpc' is the first implementation of marginal moment estimation with the additional layer of hypershrinkage. Moment-based estimates without hypershrinkage have been implemented in the R-package 'GRridge'.
+
+\strong{Hypershrinkage:}
+
+For co-data provided in the argument 'Z', a generalised ridge penalty may be used of the type:
+\deqn{\lambda_d*\gamma_d^T * S * \gamma_d}
+with the penalty matrix \eqn{S} possibly a sum of multiple penalty matrices and given in argument 'paraPen'.
+Additionally, linear (in)equality constraints may be added with the argument 'paraCon', i.e. the least squares estimate is subject to \eqn{M_ineq*\gamma_d <= b_ineq} and \eqn{M_eq*\gamma_d = b_ineq}.
+
+For co-data provided in the argument 'groupsets', the types of hypershrinkage include the ridge penalty (\eqn{\lambda_d*||\gamma||^2_2}), lasso penalty (\eqn{\lambda_d*||\gamma||_1}) and hierarchical lasso penalty with hierarchy defined in 'groupsets.grouplvl'.
+
+}
 \references{
 %% ~put references to the literature/web site here ~
-Van Nee, Mirrelijn M., Lodewyk FA Wessels, and Mark A. van de Wiel. "Flexible co-data learning for high-dimensional prediction." arXiv preprint arXiv:2005.04010 (2020).
+%G1.0 State reference
+van Nee, Mirrelijn M., Lodewyk FA Wessels, and Mark A. van de Wiel. "Flexible co-data learning for high-dimensional prediction." Statistics in medicine 40.26 (2021): 5910-5925.
 
-Van de Wiel, Mark A., Mirrelijn M. van Nee, and Armin Rauschenberger. "Fast cross-validation for multi-penalty ridge regression." arXiv preprint arXiv:2005.09301 (2020).
+van de Wiel, Mark A., Mirrelijn M. van Nee, and Armin Rauschenberger. "Fast cross-validation for multi-penalty high-dimensional ridge regression." Journal of Computational and Graphical Statistics 30.4 (2021): 835-847.
 }
 \author{
 %%  ~~who you are~~
