@@ -3372,12 +3372,12 @@ ecpc <- function(Y,X,
           glmGR <- list(a0=sum(Y-exp(X%*%beta)/(1+exp(X%*%beta)))/n) 
           a0 <- sum(Y-exp(X%*%beta)/(1+exp(X%*%beta)))/n
         }else{
-          glmGR <- list(a0=NULL)
-          a0 <- NULL
+          glmGR <- list(a0=0)
+          a0 <- 0
         }
       }else{
-        glmGR <- list(a0=NULL)
-        a0 <- NULL
+        glmGR <- list(a0=0)
+        a0 <- 0
       }
       warning("All regression coefficients (set to) 0 due to too large penalties")
     }else{
@@ -3463,6 +3463,7 @@ ecpc <- function(Y,X,
 
         betas <- multiridge::betasout(fit, Xblocks=list(Xacc[,pen]), penalties=lambdaoverall) #Find betas.
         a0 <- c(betas[[1]][1]) #intercept
+        if(is.null(a0) & model!="cox") a0 <- 0 
         beta <- rep(0,p)
         beta[(1:p)%in%unpen] <- betas[[1]][-1] #unpenalised variables
         beta[pen] <- betas[[2]]
@@ -3622,6 +3623,7 @@ ecpc <- function(Y,X,
       
       betas <- multiridge::betasout(fit, Xblocks=list(X[,pen]), penalties=lambdaridge) #Find betas.
       a0_ridge <- c(betas[[1]][1]) #intercept
+      if(is.null(a0_ridge) & model!="cox") a0_ridge <- 0
       betaridge <- rep(0,p) 
       betaridge[(1:p)%in%unpen] <- betas[[1]][-1] #unpenalised variables
       betaridge[pen] <- betas[[2]]
@@ -3634,14 +3636,14 @@ ecpc <- function(Y,X,
         X2c <- cbind(X2,rep(1,n2))
       }else{
         X2c <- X2
-        a0_ridge <- NULL
+        a0_ridge <- 0
       }
       if(model=="linear"){
-        Ypredridge <- X2c %*% c(betaridge,a0_ridge)
+        Ypredridge <- X2 %*% betaridge + a0_ridge
         MSEridge <- sum((Ypredridge-Y2)^2)/n2
       } 
       if(model=='logistic'){
-        Ypredridge <- 1/(1+exp(-X2c %*% c(betaridge,a0_ridge)))
+        Ypredridge <- 1/(1+exp(-X2 %*% betaridge - a0_ridge))
         MSEridge <- sum((Ypredridge-Y2)^2)/n2
       }else if(model=="cox"){
         expXb<-exp(X %*% c(betaridge))
