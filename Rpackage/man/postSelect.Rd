@@ -13,7 +13,7 @@ Given data and estimated parameters from a previously fit multi-group ridge pena
 postSelect(X, Y, beta, intrcpt = 0, penfctr, postselection = c("elnet,dense",
            "elnet,sparse","BRmarginal,dense","BRmarginal,sparse","DSS"), 
            maxsel = 30, penalties, model=c("linear","logistic","cox"), 
-           tauglobal, sigmahat = 1, muhatp = 0, X2 = NaN, Y2 = NaN,silent=FALSE)
+           tauglobal, sigmahat = 1, muhatp = 0, X2 = NULL, Y2 = NULL,silent=FALSE)
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{

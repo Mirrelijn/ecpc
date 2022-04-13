@@ -231,7 +231,7 @@ For co-data provided in the argument 'groupsets', the types of hypershrinkage in
 \references{
 %% ~put references to the literature/web site here ~
 %G1.0 State reference
-van Nee, Mirrelijn M., Lodewyk FA Wessels, and Mark A. van de Wiel. "Flexible co‐data learning for high‐dimensional prediction." Statistics in medicine 40.26 (2021): 5910-5925.
+van Nee, Mirrelijn M., Lodewyk FA Wessels, and Mark A. van de Wiel. "Flexible co-data learning for high-dimensional prediction." Statistics in medicine 40.26 (2021): 5910-5925.
 
 van de Wiel, Mark A., Mirrelijn M. van Nee, and Armin Rauschenberger. "Fast cross-validation for multi-penalty high-dimensional ridge regression." Journal of Computational and Graphical Statistics 30.4 (2021): 835-847.
 }
