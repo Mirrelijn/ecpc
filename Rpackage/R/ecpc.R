@@ -8,9 +8,9 @@ ecpc <- function(Y,X,
                  groupsets=NULL,groupsets.grouplvl=NULL,hypershrinkage=NULL, #co-data former
                  unpen=NULL,intrcpt=TRUE,model=c("linear", "logistic", "cox"),
                  postselection="elnet,dense",maxsel=10,
-                 lambda=NULL,fold=10,sigmasq=NaN,w=NaN,
+                 lambda=NULL,fold=10,sigmasq=NaN,w=NULL,
                  nsplits=100,weights=TRUE,profplotRSS=FALSE,
-                 Y2=NaN,X2=NaN,compare=TRUE,
+                 Y2=NULL,X2=NULL,compare=TRUE,
                  mu=FALSE,normalise=FALSE,silent=FALSE,
                  datablocks=NULL,est_beta_method=c("glmnet","multiridge")#,standardise_Y=FALSE
                  #nIt=1,betaold=NaN
@@ -76,12 +76,13 @@ ecpc <- function(Y,X,
   }
 
   #-1.1 Check variable input is as expected--------------------------------------------------
-  #check response
-  assert(checkVector(Y), checkMatrix(Y), checkArray(Y, max.d=2))
+  #check response Y, missings not allowed
+  assert(checkVector(Y, any.missing=FALSE), checkMatrix(Y, any.missing=FALSE), 
+         checkArray(Y, max.d=2, any.missing=FALSE))
   assert(checkLogical(Y), checkFactor(Y, n.levels=2), checkNumeric(Y))
   
-  #check observed data
-  assert(checkMatrix(X), checkArray(X, max.d=2))
+  #check observed data X, missings not allowed
+  assert(checkMatrix(X, any.missing=FALSE), checkArray(X, max.d=2, any.missing=FALSE))
   assertNumeric(X)
   
   #check whether dimensions Y and X match
@@ -100,9 +101,9 @@ ecpc <- function(Y,X,
     groupsets <- list(list(1:p))
   }else if(!is.null(Z)){
     #check if Z is provided as list of (sparse) matrices/arrays
-    assertList(Z, types=c("vector", "matrix", "array", "dgCMatrix"), min.len=1)
+    assertList(Z, types=c("vector", "matrix", "array", "dgCMatrix"), min.len=1, any.missing=FALSE)
     for(g in 1:length(Z)){
-      assert(checkNumeric(Z[[g]]), class(Z[[g]])[1]=="dgCMatrix")
+      assert(checkNumeric(Z[[g]], any.missing=FALSE), class(Z[[g]])[1]=="dgCMatrix")
       if(is.vector(Z[[g]])) Z[[g]] <- matrix(Z[[g]],length(Z[[g]]),1)
       #check if number of rows of Z match number of columns X
       if(dim(Z[[g]])[1]!=dim(X)[2]){
@@ -170,18 +171,180 @@ ecpc <- function(Y,X,
           }
         }
       }
+      
+      #check intercept term used for Z; intrcpt.bam
+      assertLogical(intrcpt.bam)
+      
+      #check type of method used for Z; bam.method
+      assertSubset(bam.method, c("GCV.Cp", "GACV.Cp", "REML", "P-REML", "ML", "P-ML", "fREML"))
     }
   }else{ #!is.null(groupsets)
+    #check groupsets is a list of lists of vectors of integers (covariate indices)
+    assertList(groupsets, types=c("list"), min.len=1)
+    for(g in 1:length(groupsets)){
+      assertList(groupsets[[g]], types="integerish", null.ok = TRUE)
+    }
     
+    #check groupsets.grouplvl (NULL or list)
+    assertList(groupsets.grouplvl, types=c("list","null"), null.ok = TRUE)
+    if(length(groupsets.grouplvl)>0){
+      #length should equal the number of group sets
+      if(length(groupsets.grouplvl)!=length(groupsets)){
+        stop("groupsets.grouplvl should be either NULL, or a list with at least one 
+           element not equal to NULL, with the length of the list
+           matching the length of the list provided in groupsets")
+      }
+      #elements in the group set on the group level should contain integers
+      for(g in 1:length(groupsets.grouplvl)){
+        assertList(groupsets.grouplvl[[g]], types="integerish", null.ok = TRUE)
+      }
+    }
+    
+    #check hypershrinkage
+    checkVector(hypershrinkage, null.ok = TRUE)
+    if(is.null(hypershrinkage)){
+      hypershrinkage<-rep("ridge", length(groupsets))
+    }
+    if(length(hypershrinkage)>0){
+      if(length(hypershrinkage)!=length(groupsets)){
+        stop("Number of elements in hypershrinkage should match that of groupsets")
+      }
+      for(g in 1:length(hypershrinkage)){
+        assertString(hypershrinkage[g]) #should be string
+        assertSubset(unlist(strsplit(hypershrinkage[g], split=',')),
+                     c("none","ridge","lasso","hierLasso")) #should be combination of these types
+      }
+    }
   }
-  #TD: check missing variables+handle it
   
+  #check unpen
+  assertIntegerish(unpen, null.ok=TRUE)
+  
+  #check intrcpt
+  assertLogical(intrcpt, len = 1)
+  
+  #check model
+  assert(checkSubset(model, c("linear", "logistic", "cox")),
+         class(model)[1]=="family")
+  
+  #check postselection
+  assertScalar(postselection)
+  assert(postselection==FALSE,
+         checkSubset(postselection,c( "elnet,dense", "elnet,sparse", 
+                     "BRmarginal,dense", "BRmarginal,sparse", "DSS")))
+  
+  #check maxsel
+  assertIntegerish(maxsel, lower=1, upper=dim(X)[2]-1) #must be integers and fewer than number of variables
+  
+  #check lambda
+  assertScalar(lambda, null.ok=TRUE, na.ok = TRUE)
+  assert(checkNumeric(lambda, null.ok=TRUE),
+         checkString(lambda))
+  if(testString(lambda)){
+    assert(grepl("ML",lambda), grepl("CV", lambda))
+  }
+  
+  #check fold
+  assertIntegerish(fold, lower=2, upper = dim(X)[1])
+  
+  #check sigmasq
+  assertNumeric(sigmasq, lower=0, len=1, null.ok=TRUE)
+  
+  #check w
+  assertNumeric(w, lower=0, len=ifelse(!is.null(Z), length(Z), length(groupsets)), 
+                null.ok = TRUE)
+  
+  #check nsplits
+  assertIntegerish(nsplits, lower=1)
+  
+  #check weights
+  assertLogical(weights, len=1)
+  
+  #check profplotRSS
+  assertLogical(profplotRSS, len=1)
+  
+  #check test response Y2
+  assert(checkVector(Y2, null.ok=TRUE), checkMatrix(Y2, null.ok=TRUE), 
+         checkArray(Y2, max.d=2, null.ok=TRUE))
+  assert(checkLogical(Y2, null.ok=TRUE), checkFactor(Y2, n.levels=2, null.ok=TRUE), 
+         checkNumeric(Y2, null.ok=TRUE))
+  
+  #check test observed data X2
+  assert(checkMatrix(X2, null.ok=TRUE), checkArray(X2, max.d=2, null.ok=TRUE))
+  assertNumeric(X2, null.ok=TRUE)
+  
+  #check whether dimensions Y2 and X2 match
+  if(!is.null(Y2)){
+    if(checkVector(Y2)){
+      if(length(Y2)!=dim(X2)[1]) stop("Length of vector Y2 should equal number of rows in X2")
+    }else{
+      if(dim(Y2)[1]!=dim(X2)[1]) stop("Number of rows in Y2 and X2 should be the same")
+    }
+  }
+  #check whether number of variables in test data and training data match
+  if(!is.null(X2)){
+    if(dim(X2)[2]!=dim(X)[2]){
+      stop("Number of columns in test data X2 should match that of training data X")
+    }
+  }
+  
+  #check compare
+  assertScalar(compare)
+  assert(checkLogical(compare),
+         checkString(compare))
+  if(testString(compare)){
+    assert(grepl("ML",compare), grepl("CV", compare))
+  }
+  
+  #check mu
+  assertLogical(mu, len=1)
+  
+  #check normalise
+  assertLogical(normalise, len=1)
+  
+  #check silent
+  assertLogical(silent, len=1)
+  
+  #check datablocks
+  assertList(datablocks, types="integerish", null.ok=TRUE)
+  
+  #check est_beta_method
+  assertSubset(est_beta_method, c("glmnet", "multiridge"))
+  
+  #Save input colnames/rownames to return in output
+  colnamesX <- colnames(X)
+  if(!is.null(Z)){
+    colnamesZ <- names(Z)
+    codataNames <- unlist(lapply(1:length(Z),function(x){rep(paste("Z",x,sep=""),dim(Z[[x]])[2])}))
+    codataSource <- unlist(lapply(1:length(Z),function(x){rep(x,dim(Z[[x]])[2])}))
+    if(!is.null(names(Z))){
+      codataNames <- unlist(lapply(1:length(Z),function(x){rep(names(Z)[x],dim(Z[[x]])[2])}))
+    }
+    codatavarNames <- unlist(lapply(Z,function(x){
+      if(is.null(colnames(x))) return(1:dim(x)[2])
+      colnames(x)
+    }))
+    namesZ <- paste(codataNames,codatavarNames,sep=".")
+  }else{
+    colnamesZ <- names(groupsets)
+    codataNames <- unlist(lapply(1:length(groupsets),function(x){rep(paste("Z",x,sep=""),length(groupsets[[x]]))}))
+    codataSource <- unlist(lapply(1:length(groupsets),function(x){rep(x,length(groupsets[[x]]))}))
+    if(!is.null(names(groupsets))){
+      codataNames <- unlist(lapply(1:length(groupsets),function(x){rep(names(groupsets)[x],length(groupsets[[x]]))}))
+    }
+    codatavarNames <- unlist(lapply(groupsets,function(x){
+      if(is.null(colnames(x))) return(1:length(x))
+      colnames(x)
+    }))
+    namesZ <- paste(codataNames,codatavarNames,sep=".")
+  }
+
   
   #-2. Set-up variables ---------------------------------------------------------------------------
   n <- dim(X)[1] #number of samples
   p <- dim(X)[2] #number of covariates 
   
-  if(!missing(X2)) n2<-dim(X2)[1] #number of samples in independent data set x2 if given
+  if(!is.null(X2)) n2<-dim(X2)[1] #number of samples in independent data set x2 if given
   multi <- FALSE; if(!is.null(datablocks)) multi <- TRUE #use multiple global tau, one for each data block
   
 
@@ -205,7 +368,7 @@ ecpc <- function(Y,X,
     }
   }
   levelsY<-NaN
-  if(is.null(lambda)) lambda <- ifelse(model=="linear","ML","CV")
+  if(is.null(lambda)||is.nan(lambda)) lambda <- ifelse(model=="linear","ML","CV")
   if(model=="logistic"){
     levelsY<-cbind(c(0,1),c(0,1))
     if(lambda=="ML"){
@@ -218,11 +381,13 @@ ecpc <- function(Y,X,
     Y<-as.numeric(Y)-1
     levelsY<-cbind(oldLevelsY,c(0,1))
     colnames(levelsY)<-c("Old level names","New level names")
-    if(!missing(Y2)){
+    if(!is.null(Y2)){
       levels(Y2)<-c("0","1")
       Y2<-as.numeric(Y2)-1
     }
-    if(!silent) print("Y is put in 0/1 format, see levelsY in output for new names")
+    #if(!silent) print("Y is put in 0/1 format, see levelsY in output for new names")
+    print("Y is put in 0/1 format:")
+    print(levelsY)
     }
   }
   if(model=='cox'){
@@ -304,15 +469,9 @@ ecpc <- function(Y,X,
     
     G <- sapply(groupsets,length) #1xm vector with G_i, number of groups in partition i
     m <- length(G) #number of partitions
-    if(is.null(hypershrinkage)){
-      hypershrinkage<-rep("ridge",m)
-    }
     if(any(grepl("hierLasso",hypershrinkage))){
       if(length(groupsets.grouplvl)==0){
         stop("Group set on group level for hierarchical groups is missing")
-      }
-      if(!is.list(groupsets.grouplvl) | length(groupsets.grouplvl)!=m){
-        stop("Group sets on group level should be a nested list")
       }
     }
     indGrpsGlobal <- list(1:G[1]) #global group index in case we have multiple partitions
@@ -372,7 +531,7 @@ ecpc <- function(Y,X,
     Zt <- t(Z[[1]])
     if(m>1){
       for(i in 2:m){
-        Zt <- rbind(Zt,t(Z[[i]]))
+        Zt <- rbind(Zt,Matrix::t(Z[[i]]))
       }
     }
     Kg <- list(apply(Zt,1,function(x)(sum(!is.na(x))))) #m-list with G_i vector of group sizes in partition i
@@ -453,7 +612,7 @@ ecpc <- function(Y,X,
   
   
   #-3.1.3 Variables used in iterations #######################################################################
-  if(!missing(X2)){
+  if(!is.null(X2)){
     if(model=="cox") YpredGR <- array(NaN,c(n2,nIt+1))
     else YpredGR <- array(NaN,c(n2,nIt+1))
     MSEecpc<-rep(NaN,nIt+1)
@@ -3014,7 +3173,7 @@ ecpc <- function(Y,X,
       
       #For fixed group weights, use MoM to get partition/co-data weights
       if(m>1){
-        if(!is.nan(w)){
+        if(!is.null(w)){
           if(is.nan(mu)){
             partWeightsMu[,Itr+1] <- w
             partWeightsMuG[,Itr+1] <- unlist(sapply(1:m,function(x){rep(partWeightsMu[x,Itr+1],G[x])})) #total number of groups x 1 vector with partition weights
@@ -3076,7 +3235,7 @@ ecpc <- function(Y,X,
         
         #group set weights intrinsic; set to 1
         if(m>1){
-          if(!is.nan(w)){
+          if(!is.null(w)){
             if(is.nan(mu)){
               partWeightsMu[,Itr+1] <- w
               partWeightsMuG[,Itr+1] <- unlist(sapply(1:m,function(x){rep(partWeightsMu[x,Itr+1],G[x])})) #total number of groups x 1 vector with partition weights
@@ -3122,7 +3281,7 @@ ecpc <- function(Y,X,
         
         #For fixed group weights, use MoM to get partition/co-data weights
         if(m>1){
-          if(!is.nan(w)){
+          if(!is.null(w)){
             if(is.nan(mu)){
               partWeightsMu[,Itr+1] <- w
               partWeightsMuG[,Itr+1] <- unlist(sapply(1:m,function(x){rep(partWeightsMu[x,Itr+1],G[x])})) #total number of groups x 1 vector with partition weights
@@ -3327,7 +3486,7 @@ ecpc <- function(Y,X,
     }
     
     #-3.3.6 Update predictions on independent data (if given) ################################################
-    if(!missing(X2)){
+    if(!is.null(X2)){
       if(intrcpt){
         X2c <- cbind(X2,rep(1,n2))
       }else{
@@ -3468,7 +3627,7 @@ ecpc <- function(Y,X,
       betaridge[pen] <- betas[[2]]
       rm(betas)
     }
-    if(!missing(X2)){
+    if(!is.null(X2)){
       #Ypredridge <- predict(glmR,newx=X2)
       #browser()
       if(intrcptGLM){
@@ -3506,14 +3665,23 @@ ecpc <- function(Y,X,
 
   #-6. Output -------------------------------------------------------------------------------------
   names(gamma0)<-NULL
+  names(beta) <- colnamesX
+  rownames(gamma) <- namesZ
+  gamma_temp<-gamma[,nIt+1]
+  attributes(gamma_temp)$codataSource <- codataSource
+  rownames(gammatilde) <- namesZ
+  names(lambdap) <- colnamesX
+  w <- partWeightsTau[,nIt+1]
+  names(w) <- colnamesZ
+  
   output <- list(
     beta=beta, #beta from ecpc (with Group Ridge penalties)
     intercept=a0, #unpenalised intercept covariate
     tauglobal=tauglobal, #overall tauglobal
     gammatilde = gammatilde[,nIt+1], #EB estimated prior group variance before truncating
-    gamma=gamma[,nIt+1], #group weights variance
+    gamma=gamma_temp, #group weights variance
     gamma0 = gamma0,
-    w = partWeightsTau[,nIt+1], #group set weights in local variances
+    w = w, #group set weights in local variances
     penalties = lambdap, #penalty parameter on all p covariates
     hyperlambdas = lambdashat[2,nIt+1,], #hyperpenalties for all group sets
     #weights = weights, #weights used in ridge hypershrinkage
@@ -3526,7 +3694,7 @@ ecpc <- function(Y,X,
     output$w <- partWeightsTau[,-1]
     output$hyperlambdas <- lambdashat[2,-1,]
   }
-  if(!missing(X2)){
+  if(!is.null(X2)){
     output$Ypred<-YpredGR[,-1] #predictions for test set
     output$MSEecpc <- MSEecpc[nIt+1] #MSE on test set
     if(nIt>1){
@@ -3545,10 +3713,11 @@ ecpc <- function(Y,X,
   }
 
   if(!is.nan(compare) & compare!=FALSE){ #comparison with ordinary ridge obtained with glmnet
+    names(betaridge) <- colnamesX
     output$betaridge <- betaridge #ordinary ridge or multiridge beta
     output$interceptridge <- a0_ridge
     output$lambdaridge <- lambdaridge #ordinary ridge lambda or multilambda
-    if(!all(is.nan(X2))){
+    if(!all(is.null(X2))){
       output$Ypredridge <- Ypredridge
       output$MSEridge <- MSEridge
     }
@@ -3556,7 +3725,7 @@ ecpc <- function(Y,X,
   if(postselection!=FALSE){ #posterior selection is performed
     output$betaPost <- postSel$betaPost
     output$interceptPost <- postSel$a0
-    if(!missing(X2)){
+    if(!is.null(X2)){
       output$MSEPost <- postSel$MSEPost #MSE on independent data set (if given)
       output$YpredPost <- postSel$YpredPost #predictions for independent data set (if given)
     }
@@ -3574,7 +3743,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
                           maxsel=30, #maximum number of selected variables
                           penalties,model=c("linear", "logistic", "cox"),
                           tauglobal,sigmahat=1,muhatp=0, #needed for method "elnet"
-                          X2=NaN,Y2=NaN,silent=FALSE){
+                          X2=NULL,Y2=NULL,silent=FALSE){
   #Description:
   #Post-hoc variable selection: select maximum maxsel covariates of all penalised covariates
   #Unpenalised covariates (e.g. intercept) are always selected, on top of the maxsel number of selected penalised covariates
@@ -3666,7 +3835,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
         output$whichPost <- which(nonzeros & (1:p)%in%pen) #index of selected penalised covariates
         output$a0 <- intrcpt
         
-        if(!all(is.nan(X2))){
+        if(!all(is.null(X2))){
           if(model=="linear"){
             YpredPost <- X2 %*% c(betaPost) + intrcpt
             MSEPost <- sum((YpredPost-Y2)^2)/length(Y2)
@@ -3709,9 +3878,11 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
         Xacc <- X
         Xacc[,pen] <- as.matrix(X[,pen] %*% Matrix::sparseMatrix(i=1:length(lambdap[pen]),j=1:length(lambdap[pen]),
                                                    x=c(1/sqrt(lambdap[pen]/lambdaoverall))) )
-        X2acc <- X2
-        X2acc[,pen] <- as.matrix(X2[,pen] %*% Matrix::sparseMatrix(i=1:length(lambdap[pen]),j=1:length(lambdap[pen]),
-                                                                 x=c(1/sqrt(lambdap[pen]/lambdaoverall))) )
+        if(!is.null(X2)){
+          X2acc <- X2
+          X2acc[,pen] <- as.matrix(X2[,pen] %*% Matrix::sparseMatrix(i=1:length(lambdap[pen]),j=1:length(lambdap[pen]),
+                                                                     x=c(1/sqrt(lambdap[pen]/lambdaoverall))) )
+        }
 
         #define function with output number of selected variables minus maximum possible
         #find root of function such that we have at most maxsel variables
@@ -3921,7 +4092,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           #output$offsetPost <- offset #offset used in Post
         }
         
-        if(!all(is.nan(X2))){
+        if(!all(is.null(X2))){
           if(model=="linear"){
             YpredPost <- X2 %*% c(betaPost) + output$a0
             MSEPost <- sum((YpredPost-Y2)^2)/length(Y2)
@@ -3994,7 +4165,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           output$whichPost <- which(betaPost!=0) #index of selected covariates
           output$a0 <- intrcpt
           
-          if(!all(is.nan(X2))){
+          if(!all(is.null(X2))){
             if(model=="linear"){
               YpredPost <- X2 %*% c(betaPost) + intrcpt
               MSEPost <- sum((YpredPost-Y2)^2)/length(Y2)
@@ -4050,7 +4221,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           output$whichPost <- whichPost #index of selected covariates
           output$a0 <- a0
         
-          if(!all(is.nan(X2))){
+          if(!all(is.null(X2))){
             if(model=="linear"){
               YpredPost <- X2 %*% c(betaPost) + output$a0
               MSEPost<- sum((YpredPost-Y2)^2)/length(Y2)
@@ -4129,7 +4300,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
           output$whichPost <- whichPost #index of selected covariates
           output$a0 <- intrcpt
           
-          if(!all(is.nan(X2))){
+          if(!all(is.null(X2))){
             if(model=="linear"){
               YpredPost <- X2 %*% c(betaPost) + intrcpt
               MSEPost <- sum((YpredPost-Y2)^2)/length(Y2)
@@ -4288,7 +4459,7 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
         output$a0 <- glmPost$a0
         #output$offsetPost <- offset #offset used in Post
 
-        if(!all(is.nan(X2))){
+        if(!all(is.null(X2))){
           if(model=="linear"){
             YpredPost <- X2 %*% c(betaPost) + glmPost$a0
             MSEPost <- sum((YpredPost-Y2)^2)/length(Y2)
