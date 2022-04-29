@@ -68,11 +68,11 @@ ecpc <- function(Y,X,
   gammaForm=FALSE #co-data with bam
   minlam <- 0
   if(!all(est_beta_method %in% c("glmnet", "multiridge"))){
-    warning("Estimation method for betas should be either glmnet or multiridge, set to glmnet")
-    est_beta_method <- "glmnet"
+    warning("Estimation method for betas should be either glmnet or multiridge, set to multiridge")
+    est_beta_method <- "multiridge"
   }
   if(length(est_beta_method)>1){
-    est_beta_method <- "glmnet"
+    est_beta_method <- "multiridge"
   }
 
   #-1.1 Check variable input is as expected--------------------------------------------------
@@ -346,7 +346,7 @@ ecpc <- function(Y,X,
   
   if(!is.null(X2)) n2<-dim(X2)[1] #number of samples in independent data set x2 if given
   multi <- FALSE; if(!is.null(datablocks)) multi <- TRUE #use multiple global tau, one for each data block
-  
+  if(multi==FALSE) datablocks <- list((1:p)[!((1:p)%in%unpen)])
 
   cont_codata <- FALSE; if(!is.null(Z)) cont_codata <- TRUE
   
@@ -2789,68 +2789,129 @@ ecpc <- function(Y,X,
           Btau <- ((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1)
           #Btau <- pmax(0,((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1))
  
-          browser()
           Ln2 <- try(t(apply(t(c(1/V[x])*L[x,,drop=FALSE]), 2, rep, n) *
-            apply(L[x,,drop=FALSE], 1, rep, each=n)), silent=TRUE) #pxn^2 matrix
-          
-          if(class(Ln2)[1] == "try-error"){
-            half <- 1:floor(length(x)/2)
-            Ln2half1 <- try(t(apply(t(c(1/V[x[half]])*L[x[half],,drop=FALSE]), 2, rep, n) *
-                           apply(L[x[half],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
-            if(class(Ln2half1)[1]=="try-error"){
-              print("Memory problems, switching to slower but more memory-efficient computation")
-              #same as below, but this one is really slow, but more memory-efficient
-              A <- sapply(1:dim(Zt)[1],function(j){ #for each co-data variable
-                if(j%in%ind0) return(rep(NaN,p))
-                #compute row with gamma_{xy}
-                sapply(x,function(k){
-                  sum(t(c(1/V[k])*L[k,,drop=FALSE])%*%L[k,,drop=FALSE]*
-                        (R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE])*c(Zt[j,x])*
-                                               c(tauglobal[datablockNo[x]]))),na.rm=TRUE)
-                })
-              }, simplify="array") #matrix of size pxsum(G)
-            }else{
-              Ln2half2 <- try(t(apply(t(c(1/V[x[-half]])*L[x[-half],,drop=FALSE]), 2, rep, n) *
-                                  apply(L[x[-half],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
-              Rn2 <- matrix(R[,x,drop=FALSE]%*%(t(apply(R[,x,drop=FALSE] , 2, rep, dim(Zt)[1])) *
-                                                  t(apply(Zt , 2, rep, each=n)) * c(tauglobal[datablockNo[x]])), n^2, dim(Zt)[1], byrow=FALSE) #n^2xG matrix
-              A <- Ln2half1 %*% Rn2
-              A <- rbind(A, Ln2half2 %*% Rn2)
+                         apply(L[x,,drop=FALSE], 1, rep, each=n)), silent=TRUE) #pxn^2 matrix
+          Rn2 <- try(matrix(R[,x,drop=FALSE]%*%(t(apply(R[,x,drop=FALSE] , 2, rep, dim(Zt)[1])) *
+                                                  t(apply(Zt , 2, rep, each=n)) * c(tauglobal[datablockNo[x]])), n^2, dim(Zt)[1], byrow=FALSE),
+                     silent=TRUE)#n^2xG matrix
+          if(class(Rn2)[1]=="try-error"){
+            rm(Ln2)
+            start <- 1; step <- 1000
+            part <- start:(start+step-1)
+            A <- Matrix::tcrossprod((L[x[part],]%*%R[,x])^2/c(V[x[part]]),
+                                    Zt[,x,drop=FALSE]*c(tauglobal[datablockNo[x]]))
+            start <- start+step
+            while(start < length(x)){
+              part <- start:min(length(x),(start+step-1))
+              A2 <- Matrix::tcrossprod((L[x[part],]%*%R[,x])^2/c(V[x[part]]),
+                                       Zt[,x,drop=FALSE]*c(tauglobal[datablockNo[x]]))
+              A <- rbind(A, A2)
+              rm(A2)
+              start <- start+step
             }
           }else{
-            Rn2 <- matrix(R[,x,drop=FALSE]%*%(t(apply(R[,x,drop=FALSE] , 2, rep, dim(Zt)[1])) *
-                          t(apply(Zt , 2, rep, each=n)) * c(tauglobal[datablockNo[x]])), n^2, dim(Zt)[1], byrow=FALSE) #n^2xG matrix
-            A <- Ln2 %*% Rn2
+            if(class(Ln2)[1] == "try-error"){
+              half <- 1:floor(length(x)/2)
+              Ln2half1 <- try(t(apply(t(c(1/V[x[half]])*L[x[half],,drop=FALSE]), 2, rep, n) *
+                                  apply(L[x[half],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
+              if(class(Ln2half1)[1]=="try-error"){
+                start <- 1; step <- 1000
+                part <- start:(start+step-1)
+                Ln2part1 <- try(t(apply(t(c(1/V[x[part]])*L[x[part],,drop=FALSE]), 2, rep, n) *
+                                    apply(L[x[part],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
+                A <- Ln2part1 %*% Rn2
+                start <- start+step
+                while(start < length(x)){
+                  part <- start:min(length(x),(start+step-1))
+                  Ln2part1 <- try(t(apply(t(c(1/V[x[part]])*L[x[part],,drop=FALSE]), 2, rep, n) *
+                                      apply(L[x[part],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
+                  A <- rbind(A, Ln2part1 %*% Rn2)
+                  start <- start+step
+                }
+              }else{
+                A <- Ln2half1 %*% Rn2
+                Ln2half1 <- try(t(apply(t(c(1/V[x[-half]])*L[x[-half],,drop=FALSE]), 2, rep, n) *
+                                    apply(L[x[-half],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
+                A <- rbind(A, Ln2half1 %*% Rn2)
+              }
+            }else{
+              A <- Ln2 %*% Rn2
+            }
           }
           
           
-
-          #Same as straightforwardly computating:
+          # (L[block,]%*%R)^2%*%Z
+          # diag(AD_yB^T)
+          # diag(LR*diag(Z)*R^TL^T)
+          # R2 = R*diag(Z)*R^T = (R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE])*c(Zt[j,x])
+          # diag(L*R2*L^T)
+          # print("Memory problems, switching to slower but more memory-efficient computation")
+          #same as below, but this one is really slow, but more memory-efficient
+          # A <- sapply(1:dim(Zt)[1],function(j){ #for each co-data variable
+          #   if(j%in%ind0) return(rep(NaN,p))
+          #   #compute row with gamma_{xy}
+          #   sapply(x,function(k){
+          #     sum(t(c(1/V[k])*L[k,,drop=FALSE])%*%L[k,,drop=FALSE]*
+          #           (R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE])*c(Zt[j,x])* #opslaan apart kan niet tenzij n^2 matrix
+          #                                  c(tauglobal[datablockNo[x]]))),na.rm=TRUE)
+          #   })
+          # }, simplify="array") #matrix of size pxsum(G)
+          #Same as straightforwardly computing:
           #A2 <- as.matrix(((L[x,]%*%R[,x])^2/c(V[x]))%*%t(Zt[,x,drop=FALSE])*c(tauglobal[datablockNo[x]]))
           
           #other format of A needed for mgcv
           if(hypershrinkage=="mgcv"){
-            Alist <- lapply(Z,function(Zi){
-              Rn2 <- matrix(R[,x,drop=FALSE]%*%(t(apply(R[,x,drop=FALSE] , 2, rep, dim(Zi)[2])) *
-                                                  t(apply(t(Zi),2, rep, each=n)) * 
-                                                  c(tauglobal[datablockNo[x]])), n^2, dim(Zi)[2], byrow=FALSE) #n^2xp matrix
-              A <- Ln2 %*% Rn2
-              #same as below, but this one is really slow
-              # A <- sapply(1:dim(Zi)[2],function(j){ #for each co-data variable
-              #   #compute row with gamma_{xy}
-              #   sapply(x,function(k){
-              #     sum(t(c(1/V[k])*L[k,,drop=FALSE])%*%L[k,,drop=FALSE]*
-              #           (R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE])*c(Zi[x,j])*
-              #                                  c(tauglobal[datablockNo[x]]))),na.rm=TRUE)
-              #   })
-              # }, simplify="array") #matrix of size pxsum(G)
-              #same as below, but more memory-efficient:
-              #A <- as.matrix(((L[x,]%*%R[,x])^2/c(V[x]))%*%Zi[x,]*c(tauglobal[datablockNo[x]]))
-              return(A)
-            })
+            Alist <- lapply(indGrpsGlobal, function(ind) as.matrix(A[,ind,drop=FALSE]))
             names(Alist) <- paste("Z",1:length(Alist),sep="")
-            Aintrcpt <- Ln2 %*% c(R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE]) *
-                                rep(1,length(x)) * c(tauglobal[datablockNo[x]])))
+            #make intercept
+            if(class(Rn2)[1]=="try-error"){
+              start <- 1; step <- 1000
+              part <- start:(start+step-1)
+              Aintrcpt <- ((L[x[part],,drop=FALSE]%*%R[,x,drop=FALSE])^2/c(V[x[part]]))%*%c(tauglobal[datablockNo[x]])
+              start <- start+step
+              while(start < length(x)){
+                part <- start:min(length(x),(start+step-1))
+                A2 <- ((L[x[part],,drop=FALSE]%*%R[,x,drop=FALSE])^2/c(V[x[part]]))%*%c(tauglobal[datablockNo[x]])
+                Aintrcpt <- rbind(Aintrcpt, A2)
+                rm(A2)
+                start <- start+step
+              }
+            }else{
+              if(class(Ln2)[1]== "try-error"){
+                if(class(Ln2half1)[1]=="try-error"){
+                  start <- 1; step <- 1000 #break up in parts of 1000 variables
+                  part <- start:(start+step-1)
+                  Ln2part1 <- try(t(apply(t(c(1/V[x[part]])*L[x[part],,drop=FALSE]), 2, rep, n) *
+                                      apply(L[x[part],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
+                  Aintrcpt <- Ln2part1 %*% c(R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE]) *
+                                                                   rep(1,length(x)) * c(tauglobal[datablockNo[x]])))
+                  start <- start+step
+                  while(start < length(x)){
+                    part <- start:min(length(x),(start+step-1))
+                    Ln2part1 <- try(t(apply(t(c(1/V[x[part]])*L[x[part],,drop=FALSE]), 2, rep, n) *
+                                        apply(L[x[part],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
+                    A <- rbind(A, Ln2part1 %*% c(R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE]) *
+                                                                       rep(1,length(x)) * c(tauglobal[datablockNo[x]]))))
+                    start <- start+step
+                  }
+                }else{
+                  half <- 1:floor(length(x)/2)
+                  Ln2half1 <- try(t(apply(t(c(1/V[x[half]])*L[x[half],,drop=FALSE]), 2, rep, n) *
+                                      apply(L[x[half],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
+                  Aintrcpt <- Ln2half1 %*% c(R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE]) *
+                                                                   rep(1,length(x)) * c(tauglobal[datablockNo[x]])))
+                  Ln2half1 <- try(t(apply(t(c(1/V[x[-half]])*L[x[-half],,drop=FALSE]), 2, rep, n) *
+                                      apply(L[x[-half],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
+                  Aintrcpt <- rbind(Aintrcpt, Ln2half1 %*% c(R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE]) *
+                                                                                   rep(1,length(x)) * c(tauglobal[datablockNo[x]]))))
+                }
+              }else{
+                Aintrcpt <- Ln2 %*% c(R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE]) *
+                                                            rep(1,length(x)) * c(tauglobal[datablockNo[x]])))
+              }
+            }
+            Aintrcpt <- as.matrix(Aintrcpt)
+            
             # Aintrcpt <- sapply(x,function(k){
             #     sum(t(c(1/V[k])*L[k,,drop=FALSE])%*%L[k,,drop=FALSE]*
             #           (R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE])*c(rep(1,length(x)))*
@@ -3383,6 +3444,7 @@ ecpc <- function(Y,X,
     #-3.3.5 Update beta using glmnet or multiridge#######################################################################
     if(!silent) print("Estimate regression coefficients")
     if(all(gamma[,Itr+1]==0) | all(lambdap==Inf)){
+      lambdaoverall <- exp(mean(log(sigmahat/tauglobal[datablockNo[pen]])))
       beta <- muhatp
       if(intrcpt){
         if(model=="linear"){
@@ -3569,6 +3631,7 @@ ecpc <- function(Y,X,
   if(postselection!=FALSE){
     if(!silent) print("Sparsify model with posterior selection")
       #for multi==FALSE; tauglobal=sigmahat/lambdaoverall
+    
     if(model=="family"){
       #insert model=fml for family object
       postSel <- postSelect(X=X,Y=Y,beta=beta,intrcpt=a0,penfctr=penfctr, 
@@ -3624,7 +3687,9 @@ ecpc <- function(Y,X,
       # betaridge <- as.vector(glmR$beta)
       # betaridge[pen] <- c(1/sqrt(lambdaridge[datablockNo[pen]]/lambdaoverall)) * betaridge[pen]
     }else{ #use multiridge package to update ordinary ridge betas
-      XXbl <- list(X[,pen]%*%t(X[,pen]))
+      Xbl <- multiridge::createXblocks(lapply(datablocks,function(ind) X[,intersect(ind,ind[!(ind%in%unpen)])]))
+      XXbl <- multiridge::createXXblocks(lapply(datablocks,function(ind) X[,intersect(ind,ind[!(ind%in%unpen)])]))
+      
       #Compute betas
       XXT <- multiridge::SigmaFromBlocks(XXbl,penalties=lambdaridge) #create nxn Sigma matrix = sum_b [lambda_b)^{-1} X_b %*% t(X_b)]
       if(model!="cox"){
@@ -3641,8 +3706,8 @@ ecpc <- function(Y,X,
         }
       }
       
-      betas <- multiridge::betasout(fit, Xblocks=list(X[,pen]), penalties=lambdaridge) #Find betas.
-      a0_ridge <- c(betas[[1]][1]) #intercept
+      betas <- multiridge::betasout(fit, Xblocks=Xbl, penalties=lambdaridge) #Find betas.
+      a0_ridge <- c(betas[[1]][1]) #intercept-
       if(is.null(a0_ridge) & model!="cox") a0_ridge <- 0
       betaridge <- rep(0,p) 
       betaridge[(1:p)%in%unpen] <- betas[[1]][-1] #unpenalised variables
@@ -3708,7 +3773,8 @@ ecpc <- function(Y,X,
     hyperlambdas = lambdashat[2,nIt+1,], #hyperpenalties for all group sets
     #weights = weights, #weights used in ridge hypershrinkage
     #levelsY = levelsY, #in case of logistic
-    sigmahat=sigmahat #estimated sigma^2 (linear model)
+    sigmahat=sigmahat, #estimated sigma^2 (linear model)
+    model=model
   )
   if(nIt>1){
     output$gamma <- gamma[,-1]
@@ -3759,12 +3825,12 @@ ecpc <- function(Y,X,
 
 ### Other functions 
 #Select covariates a posteriori----
-postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
+postSelect <- function(object, X, Y, beta=NULL,intrcpt=0,penfctr=NULL, #input data
                           postselection=c("elnet,dense", "elnet,sparse", "BRmarginal,dense", 
                                           "BRmarginal,sparse","DSS"), #posterior selection method
                           maxsel=30, #maximum number of selected variables
-                          penalties,model=c("linear", "logistic", "cox"),
-                          tauglobal,sigmahat=1,muhatp=0, #needed for method "elnet"
+                          penalties=NULL,model=c("linear", "logistic", "cox"),
+                          tauglobal=NULL,sigmahat=NULL,muhatp=0, #needed for method "elnet"
                           X2=NULL,Y2=NULL,silent=FALSE){
   #Description:
   #Post-hoc variable selection: select maximum maxsel covariates of all penalised covariates
@@ -3791,9 +3857,18 @@ postSelect <- function(X,Y,beta,intrcpt=0,penfctr, #input data
   #Input optional:
   #X2,Y2 (optional): independent data and response on which predictions and MSE is computed
   
+  #set variables given as in fitted ecpc-object, or to given values
+  if(missing(object)) object <- NULL
+  if(is.null(beta)) beta <- object$beta
+  if(intrcpt==0 && !is.null(object$intercept) && object$intercept!=0) intrcpt <- object$intercept
+  if(is.null(penalties)) penalties <- object$penalties
+  if(is.null(sigmahat)) sigmahat <- object$sigmahat
+  if(is.null(tauglobal)) tauglobal <- object$tauglobal
+  if(length(tauglobal)>1) tauglobal <- exp(mean(log(tauglobal)))
+
   n<-dim(X)[1] #number of samples
   p<-dim(X)[2] #number of covariates (penalised and unpenalised)
-  if(missing(penfctr)) penfctr <- rep(1,p) #all covariates penalised the same
+  if(is.null(penfctr)) penfctr <- rep(1,p) #all covariates penalised the same
   if(length(postselection)>1) postselection <- "elnet+dense"
   if(class(model)[1]=="family"){
     #use glmnet package and cross-validation to compute initial global lambda en beta estimates

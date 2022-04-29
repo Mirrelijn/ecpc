@@ -31,9 +31,27 @@ summary.ecpc <- function(object, ...){
 
 plot.ecpc <- function(x, show=c("coefficients","priorweights"),
                       Z=NULL, values=NULL,
-                      groupsets=NULL, ...){
+                      groupsets=NULL, codataweights=FALSE, ...){
+  show_ggplot <- FALSE
+  y<-NULL
+  if(requireNamespace("ggplot2")&requireNamespace("ggpubr")) show_ggplot <- TRUE
+  if(length(x$tauglobal)>1){
+    print("For multiple datablocks of X (multiple tauglobal), only the group 
+          contributions are plotted, (i.e. for tauglobal set to 1)")
+    x$tauglobal <- 1
+  }
+  
   if(length(show)==2) show <- "coefficients"
   if(show=="coefficients"){
+    if(show_ggplot){
+      p1 <- ggplot2::ggplot(data.frame(x=x$sigmahat/x$penalties, y=x$beta^2))+
+        ggplot2::aes(x=x,y=y)+
+        ggplot2::geom_point()+
+        ggplot2::labs(x="Prior variance", y="Squared regression coefficients")+
+        ggplot2::geom_abline(intercept=0,slope=1)
+      p1
+      return(p1)
+    }
     par(mfrow=c(1,1))
     #par(mfrow=c(1,3))
     #plot(log(x$penalties), x$beta)
@@ -54,6 +72,10 @@ plot.ecpc <- function(x, show=c("coefficients","priorweights"),
       }else{
         print("Prior variance contribution per group/continuous values and co-data source is plotted.")
       }
+      if(is.null(names(Z))) names(Z) <- paste("Co-data set",1:length(Z))
+      
+      df <- data.frame()
+      p1 <- list()
       nrows <- floor(sqrt(length(Z)))
       ncols <- ceiling(length(Z)/nrows)
       par(mfrow=c(nrows,ncols))
@@ -61,23 +83,155 @@ plot.ecpc <- function(x, show=c("coefficients","priorweights"),
         ind_g <- attributes(x$gamma)$codataSource==g
         if(is.null(values[[g]])){
           if(is.null(colnames(Z[[g]])) || any(colnames(Z[[g]])=="")){
-            plot(factor(1:dim(Z[[g]])[2]), x$gamma[ind_g]*x$tauglobal* x$w[g],
-                 main=names(Z)[g], xlab="Co-data variable",
-                 ylab="Prior variance weight")
+            if(codataweights){
+              if(show_ggplot){
+                temp <- data.frame(x=factor(1:dim(Z[[g]])[2]),
+                                   y=x$gamma[ind_g]*x$tauglobal* x$w[g],
+                                   Codatasource=names(Z)[g])
+                #df <- rbind(df,temp)
+                p1[[g]] <- ggplot2::ggplot(temp)+ggplot2::aes(x=x,y=y)+
+                  ggplot2::geom_point()+
+                  ggplot2::labs(x="Co-data variable",y="Prior variance weight", title=names(Z)[g])
+              }else{
+                plot(factor(1:dim(Z[[g]])[2]), x$gamma[ind_g]*x$tauglobal* x$w[g],
+                     main=names(Z)[g], xlab="Co-data variable",
+                     ylab="Prior variance weight")
+              }
+            }else{
+              if(show_ggplot){
+                temp <- data.frame(x=factor(1:dim(Z[[g]])[2]),
+                                   y=x$gamma[ind_g]*x$tauglobal,
+                                   Codatasource=names(Z)[g])
+                #df <- rbind(df,temp)
+                p1[[g]] <- ggplot2::ggplot(temp)+ggplot2::aes(x=x,y=y)+
+                  ggplot2::geom_point()+
+                  ggplot2::labs(x="Co-data variable",y="Prior variance weight", title=names(Z)[g])
+              }else{
+                plot(factor(1:dim(Z[[g]])[2]), x$gamma[ind_g]*x$tauglobal,
+                     main=names(Z)[g], xlab="Co-data variable",
+                     ylab="Prior variance weight")
+              }
+            }
           }else{
-            plot(factor(colnames(Z[[g]]), levels=colnames(Z[[g]])), 
-                 x$gamma[ind_g] * x$tauglobal * x$w[g],
-                 main=names(Z)[g], xlab="Co-data variable",
-                 ylab="Prior variance weight")
+            if(codataweights){
+              if(show_ggplot){
+                temp <- data.frame(x=factor(colnames(Z[[g]])),
+                                   y=x$gamma[ind_g]*x$tauglobal* x$w[g],
+                                   Codatasource=names(Z)[g])
+                #df <- rbind(df,temp)
+                p1[[g]] <- ggplot2::ggplot(temp)+ggplot2::aes(x=x,y=y)+
+                  ggplot2::geom_point()+
+                  ggplot2::labs(x="Co-data variable",y="Prior variance weight", title=names(Z)[g])
+              }else{
+                plot(factor(colnames(Z[[g]]), levels=colnames(Z[[g]])), 
+                     x$gamma[ind_g] * x$tauglobal * x$w[g],
+                     main=names(Z)[g], xlab="Co-data variable",
+                     ylab="Prior variance weight")
+              }
+            }else{
+              if(show_ggplot){
+                temp <- data.frame(x=factor(colnames(Z[[g]])),
+                                   y=x$gamma[ind_g]*x$tauglobal,
+                                   Codatasource=names(Z)[g])
+                #df <- rbind(df,temp)
+                p1[[g]] <- ggplot2::ggplot(temp)+ggplot2::aes(x=x,y=y)+
+                  ggplot2::geom_point()+
+                  ggplot2::labs(x="Co-data variable",y="Prior variance weight", title=names(Z)[g])
+              }else{
+                plot(factor(colnames(Z[[g]]), levels=colnames(Z[[g]])), 
+                     x$gamma[ind_g] * x$tauglobal,
+                     main=names(Z)[g], xlab="Co-data variable",
+                     ylab="Prior variance weight")
+              }
+            }
           }
         }else{
-          plot(values[[g]], Z[[g]]%*%x$gamma[ind_g] * x$tauglobal * x$w[g],
-               main=names(Z)[g], xlab="Continuous co-data variable",
-               ylab="Prior variance weight")
+          if(codataweights){
+            if(show_ggplot){
+              temp <- data.frame(x=values[[g]],
+                                 y= Z[[g]]%*%x$gamma[ind_g] * x$tauglobal * x$w[g],
+                                 Codatasource=names(Z)[g])
+              #df <- rbind(df,temp)
+              p1[[g]] <- ggplot2::ggplot(temp)+ggplot2::aes(x=x,y=y)+
+                ggplot2::geom_line()+
+                ggplot2::labs(x="Continuous co-data variable",y="Prior variance weight", title=names(Z)[g])
+            }else{
+              plot(values[[g]], Z[[g]]%*%x$gamma[ind_g] * x$tauglobal * x$w[g],
+                   main=names(Z)[g], xlab="Continuous co-data variable",
+                   ylab="Prior variance weight")
+            }
+          }else{
+            if(show_ggplot){
+              temp <- data.frame(x=values[[g]],
+                                 y= Z[[g]]%*%x$gamma[ind_g] * x$tauglobal,
+                                 Codatasource=names(Z)[g])
+              #df <- rbind(df,temp)
+              p1[[g]] <- ggplot2::ggplot(temp)+ggplot2::aes(x=x,y=y)+
+                ggplot2::geom_line()+
+                ggplot2::labs(x="Continuous co-data variable",y="Prior variance weight", title=names(Z)[g])
+            }else{
+              plot(values[[g]], Z[[g]]%*%x$gamma[ind_g] * x$tauglobal,
+                   main=names(Z)[g], xlab="Continuous co-data variable",
+                   ylab="Prior variance weight")
+            }
+          }
         } 
+      }
+      
+      if(show_ggplot){
+        #df$Codatasource <- factor(df$Codatasource, levels=unique(df$Codatasource),
+        #                          labels=unique(df$Codatasource))
+        ylims <- sapply(1:length(Z), function(g){
+          ind_g <- attributes(x$gamma)$codataSource==g
+          if(is.null(values[[g]])){
+            if(codataweights){
+              return(range(x$gamma[ind_g] * x$tauglobal *x$w[g]))
+            }else{
+              return(range(x$gamma[ind_g]* x$tauglobal))
+            }
+          }else{
+            if(codataweights){
+              return(range(Z[[g]]%*%x$gamma[ind_g] * x$tauglobal *x$w[g]))
+            }else{
+              return(range(Z[[g]]%*%x$gamma[ind_g]* x$tauglobal))
+            }
+          }
+          })
+        ylims <- range(c(ylims))
+        #ylims <- ylims + 0.01*diff(ylims)*c(-1,1)
+        for(g in 1:length(Z)){
+          p1[[g]] <- p1[[g]]+ggplot2::ylim(ylims)
+        }
+        p2 <- ggpubr::ggarrange(plotlist=p1, nrow=nrows)
+        p2
+        return(p2)
       }
     }
   }
+}
+
+predict.ecpc <- function(object, X2, X=NULL, Y=NULL, ...){
+  beta <- object$beta
+  a0 <- object$intercept
+  model <- object$model
+  
+  if(model=="linear"){
+    predictions <- X2 %*% beta + a0
+  }else if(model=='logistic'){
+    predictions <- 1/(1+exp(-X2 %*% beta - a0))
+  }else if(model=='cox'){ 
+    predictions<-exp(X2 %*% c(beta))
+    if(!is.null(X) & !is.null(Y)){
+      expXb<-exp(X %*% c(beta))
+      h0 <- sapply(1:length(Y[,1]),function(i){Y[i,2]/sum(expXb[Y[,1]>=Y[i,1]])})#updated baseline hazard in censored times for left out samples
+      H0 <- sapply(sort(c(Y[,1])),function(Ti){sum(h0[Y[,1]<=Ti])})
+      predictions <- outer(c(predictions),c(H0))
+    }
+  }else{
+    warning("This type of model is not supported")
+    predictions <- NULL
+  }
+  return(predictions)
 }
 
 coef.ecpc <- function(object,
@@ -270,6 +424,7 @@ coef.ecpc <- function(object,
   return(betas)
 }
 
+
 #Obtain penalties for given co-data and prior parameters
 penalties <- function(object,
                       tauglobal=NULL,sigmahat=NULL,gamma=NULL,gamma0=NULL,w=NULL,
@@ -344,3 +499,4 @@ penalties <- function(object,
   
   return(penalties)
 }
+

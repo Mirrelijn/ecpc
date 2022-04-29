@@ -1,60 +1,47 @@
-\name{plot.ecpc}
-\alias{plot.ecpc}
+\name{predict.ecpc}
+\alias{predict.ecpc}
 %- Also NEED an '\alias' for EACH other topic documented here.
 \title{
 %%  ~~function to do ... ~~
-Plot an 'ecpc' object
+Predict for new samples for `ecpc' object
 }
 \description{
 %%  ~~ A concise (1-5 lines) description of what the function does. ~~
-Make a plot of the fitted regression coefficients versus their corresponding fitted
-prior variances, or fit the prior variance weight contribution of each co-data source.
+Predict the response for new samples based on an `ecpc' object.
 }
 \usage{
-\method{plot}{ecpc}(x, show = c("coefficients", "priorweights"), 
-     Z = NULL, values = NULL, groupsets = NULL,
-     codataweights=FALSE, ...)
+\method{predict}{ecpc}(object, X2, X=NULL, Y=NULL, \dots)
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
-  \item{x}{
+  \item{object}{
 %%     ~~Describe \code{x} here~~
 An 'ecpc' object returned by \code{\link{ecpc}}.
 }
-  \item{show}{
-%%     ~~Describe \code{show} here~~
-Either "coefficients" or "priorweights" to show the fitted regression coefficients
-or the prior variances. To plot the prior variances, co-data should be provided 
-in either 'Z' or 'groupsets'.
+  \item{X2}{
+%%     ~~Describe \code{X2} here~~
+Independent observed data for which response is predicted.
 }
-  \item{Z}{
-%%     ~~Describe \code{Z} here~~
-List of m co-data matrices, as in \code{\link{ecpc}}.
+  \item{X}{
+%%     ~~Describe \code{X} here~~
+Observed data used in fitting the `object'; (nxp)-dimensional matrix (p: number of covariates) with each row the observed high-dimensional feature vector of a sample.
 }
-  \item{values}{
-%%     ~~Describe \code{values} here~~
-List of m elements, containing p-dimensinal vectors with continuous co-data values or NULL.
-If provided, the prior variances will be plotted versus the provided continuous co-data.
-If NULL, the prior variances will be plotted per co-data variable.
+  \item{Y}{
+%%     ~~Describe \code{Y} here~~
+Response data used in fitting the `object'; n-dimensional vector (n: number of samples) for linear and logistic outcomes, or \code{\link{Surv}} object for Cox survival.
 }
-  \item{groupsets}{
-%%     ~~Describe \code{groupsets} here~~
-Co-data provided as list of group sets, as in \code{\link{ecpc}}.
-}
-  \item{codataweights}{
-%%     ~~Describe \code{groupsets} here~~
-For the option `show="priorweights"', should the prior variances include the co-data source weights?
-}
-\item{\dots}{...}
+\item{\dots}{Other parameters}
 }
 \value{
-If the packages `ggplot2' and `ggpubr' are installed, a `ggplot' object is shown and returned, else a base plot is shown.
+Vector with predicted values. Note that for Cox response, the relative risks are provided, unless training data X and Y is provided to compute the Breslow estimator.
+
+%%  ~Describe the value returned
+%%  If it is a LIST, use
+%%  \item{comp1 }{Description of 'comp1'}
+%%  \item{comp2 }{Description of 'comp2'}
+%% ...
 }
 
-\seealso{
-%% ~~objects to See Also as \code{\link{help}}, ~~~
-See \code{\link{ecpc}} for model fitting.
-}
 \examples{
 \donttest{ 
 #####################
@@ -109,11 +96,6 @@ fit <- ecpc(Y=Dat$Y,X=Dat$Xctd,
            Y2=Dat$Y2,X2=Dat$X2ctd)
 toc <- proc.time()[[3]]-tic
 
-values <- list(NULL, continuousCodata, NULL)
-
-plot(fit, show="coefficients")
-plot(fit, show="priorweights", Z=Z.all, values=values)
+predictions <- predict(fit, X2=Dat$X2ctd)
 }
-
 }
-

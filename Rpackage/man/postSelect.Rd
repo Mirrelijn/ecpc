@@ -10,13 +10,18 @@ Perform posterior selection
 Given data and estimated parameters from a previously fit multi-group ridge penalised model, perform posterior selection to find a parsimonious model.
 }
 \usage{
-postSelect(X, Y, beta, intrcpt = 0, penfctr, postselection = c("elnet,dense",
-           "elnet,sparse","BRmarginal,dense","BRmarginal,sparse","DSS"), 
-           maxsel = 30, penalties, model=c("linear","logistic","cox"), 
-           tauglobal, sigmahat = 1, muhatp = 0, X2 = NULL, Y2 = NULL,silent=FALSE)
+postSelect(object, X, Y, beta=NULL, intrcpt = 0, penfctr=NULL, 
+           postselection = c("elnet,dense","elnet,sparse","BRmarginal,dense",
+           "BRmarginal,sparse","DSS"), maxsel = 30, penalties=NULL, 
+           model=c("linear","logistic","cox"), tauglobal=NULL, sigmahat = NULL, 
+           muhatp = 0, X2 = NULL, Y2 = NULL, silent=FALSE)
 }
 %- maybe also 'usage' for other objects documented here.
 \arguments{
+  \item{object}{
+%%     ~~Describe \code{x} here~~
+An 'ecpc' object returned by \code{\link{ecpc}}.
+}
   \item{X}{
 %%     ~~Describe \code{X} here~~
 Observed data: data of p penalised and unpenalised covariates on n samples; (nxp)-dimensional matrix.
@@ -121,9 +126,7 @@ fit <- ecpc(Y=Dat$Y,X=Dat$Xctd,groupsets=list(list(1:p)),
             model="linear",maxsel=c(5,10,15,20),
             Y2=Dat$Y2,X2=Dat$X2ctd)
 
-fitPost <- postSelect(Y=Dat$Y,X=Dat$Xctd, beta=fit$beta, intrcpt = fit$intercept,
-                      maxsel = c(5,10,15,20), penalties=fit$penalties, 
-                      tauglobal=fit$tauglobal, sigmahat = fit$sigmahat)
+fitPost <- postSelect(fit, Y=Dat$Y, X=Dat$Xctd, maxsel = c(5,10,15,20))
 summary(fit$betaPost[,1]); summary(fitPost$betaPost[,1])
 }
 }

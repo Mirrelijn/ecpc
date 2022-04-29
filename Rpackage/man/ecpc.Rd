@@ -161,7 +161,7 @@ Should output messages be suppressed (default FALSE)?
 %%  \item{comp1 }{Description of 'comp1'}
 %%  \item{comp2 }{Description of 'comp2'}
 %% ...
-A list with the following elements:
+An object of the class `ecpc' with the following elements:
   \item{beta}{Estimated regression coefficients; p-dimensional vector.}
   \item{intercept}{If included, the estimated intercept; scalar.}
   \item{tauglobal}{Estimated global prior variance; scalar (or vector with datatype-specific global prior variances when multiple `datablocks' are given).)}
@@ -175,6 +175,7 @@ A list with the following elements:
   \item{MSEecpc}{If independent test set 'X2', 'Y2' is given, mean squared error of the predictions.}
   \item{sigmahat}{(linear model) Estimated sigma^2.}
 If 'compare'=TRUE, ordinary ridge estimates and predictions are given. If in addition multiple `datablocks' are given, the estimates and predictions for multiridge penalty are given;
+  \item{model}{Type of model fitted for the response; linear, logistic or cox.}
   \item{betaridge}{Estimated regression coefficients for ordinary ridge (or multiridge) penalty.}
   \item{interceptridge}{Estimated intercept for ordinary ridge (or multiridge) penalty.}
   \item{lambdaridge}{Estimated (multi)ridge penalty.}
