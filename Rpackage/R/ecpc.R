@@ -2789,22 +2789,42 @@ ecpc <- function(Y,X,
           Btau <- ((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1)
           #Btau <- pmax(0,((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1))
  
-          Ln2 <- t(apply(t(c(1/V[x])*L[x,,drop=FALSE]), 2, rep, n) *
-            apply(t(L[x,,drop=FALSE]), 2, rep, each=n)) #pxn^2 matrix
-          Rn2 <- matrix(R[,x,drop=FALSE]%*%(t(apply(R[,x,drop=FALSE] , 2, rep, dim(Zt)[1])) *
-            t(apply(Zt , 2, rep, each=n)) * c(tauglobal[datablockNo[x]])), n^2, dim(Zt)[1], byrow=FALSE) #n^2xp matrix
-          A <- Ln2 %*% Rn2
+          browser()
+          Ln2 <- try(t(apply(t(c(1/V[x])*L[x,,drop=FALSE]), 2, rep, n) *
+            apply(L[x,,drop=FALSE], 1, rep, each=n)), silent=TRUE) #pxn^2 matrix
           
-          #same as below, but this one is really slow
-          # A <- sapply(1:dim(Zt)[1],function(j){ #for each co-data variable
-          #         if(j%in%ind0) return(rep(NaN,p))
-          #         #compute row with gamma_{xy}
-          #         sapply(x,function(k){
-          #           sum(t(c(1/V[k])*L[k,,drop=FALSE])%*%L[k,,drop=FALSE]*
-          #                 (R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE])*c(Zt[j,x])*
-          #                                        c(tauglobal[datablockNo[x]]))),na.rm=TRUE)
-          #         })
-          #       }, simplify="array") #matrix of size pxsum(G)
+          if(class(Ln2)[1] == "try-error"){
+            half <- 1:floor(length(x)/2)
+            Ln2half1 <- try(t(apply(t(c(1/V[x[half]])*L[x[half],,drop=FALSE]), 2, rep, n) *
+                           apply(L[x[half],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
+            if(class(Ln2half1)[1]=="try-error"){
+              print("Memory problems, switching to slower but more memory-efficient computation")
+              #same as below, but this one is really slow, but more memory-efficient
+              A <- sapply(1:dim(Zt)[1],function(j){ #for each co-data variable
+                if(j%in%ind0) return(rep(NaN,p))
+                #compute row with gamma_{xy}
+                sapply(x,function(k){
+                  sum(t(c(1/V[k])*L[k,,drop=FALSE])%*%L[k,,drop=FALSE]*
+                        (R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE])*c(Zt[j,x])*
+                                               c(tauglobal[datablockNo[x]]))),na.rm=TRUE)
+                })
+              }, simplify="array") #matrix of size pxsum(G)
+            }else{
+              Ln2half2 <- try(t(apply(t(c(1/V[x[-half]])*L[x[-half],,drop=FALSE]), 2, rep, n) *
+                                  apply(L[x[-half],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
+              Rn2 <- matrix(R[,x,drop=FALSE]%*%(t(apply(R[,x,drop=FALSE] , 2, rep, dim(Zt)[1])) *
+                                                  t(apply(Zt , 2, rep, each=n)) * c(tauglobal[datablockNo[x]])), n^2, dim(Zt)[1], byrow=FALSE) #n^2xG matrix
+              A <- Ln2half1 %*% Rn2
+              A <- rbind(A, Ln2half2 %*% Rn2)
+            }
+          }else{
+            Rn2 <- matrix(R[,x,drop=FALSE]%*%(t(apply(R[,x,drop=FALSE] , 2, rep, dim(Zt)[1])) *
+                          t(apply(Zt , 2, rep, each=n)) * c(tauglobal[datablockNo[x]])), n^2, dim(Zt)[1], byrow=FALSE) #n^2xG matrix
+            A <- Ln2 %*% Rn2
+          }
+          
+          
+
           #Same as straightforwardly computating:
           #A2 <- as.matrix(((L[x,]%*%R[,x])^2/c(V[x]))%*%t(Zt[,x,drop=FALSE])*c(tauglobal[datablockNo[x]]))
           
