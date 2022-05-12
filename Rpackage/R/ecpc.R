@@ -2959,7 +2959,8 @@ ecpc <- function(Y,X,
                            M.eq <- paraCon[[name]][["M.eq"]]
                            b.eq <- paraCon[[name]][["b.eq"]]
                          }
-                         S1 <- paraPen[[name]][["S1"]] #generalised ridge penalty matrix
+                         S1 <- paraPen[[name]][["S1"]] #generalised ridge penalty matrix,
+                         if(is.null(S1)) S1 <- diag(rep(1,dim(A)[2])) #use ordinary ridge penalty
                          if("S2"%in%names(paraPen[[name]])) warning("Only first penalty matrix S1 is included")
                          
                          #function to compute tau for linear system given a hyperpenalty lambda2
@@ -3205,9 +3206,15 @@ ecpc <- function(Y,X,
                   Atilde <- A[,indnot0]%*%weightMatrixTau[indnot0,partWeightsTau[,Itr]!=0] 
                   
                   #solve with constraint w>=0
+                  #gammatilde<-rep(0,m)
+                  #w <- try(pracma::lsqlincon(C=as.matrix(Atilde), d=Btau,lb=0),silent=TRUE)
+                  
+                  #solve with constraint w>=0 and sum(w)>=1
                   gammatilde<-rep(0,m)
-                  w <- try(pracma::lsqlincon(C=Atilde, d=Btau,lb=0),silent=TRUE)
-                  if(class(w)[1]=="try-error") w <- rep(0,m)
+                  w <- try(pracma::lsqlincon(C=as.matrix(Atilde), d=Btau,lb=0,
+                                             A=matrix(rep(-1,dim(Atilde)[2]),1,dim(Atilde)[2]),b=-1),
+                           silent=TRUE)
+                  if(class(w)[1]=="try-error" | all(w==0)) w <- rep(1/m,m)
                   gammatilde <- w
                   gamma <- w
                 }
