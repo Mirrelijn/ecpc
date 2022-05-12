@@ -4,7 +4,7 @@ print.ecpc <- function(x, ...){
   cat("ecpc fit\n")
   cat("\n")
   cat("Estimated co-data variable weights: \n")
-  cat(x$gamma," \n")
+  cat(x$gamma*x$tauglobal," \n")
   cat("\n")
   cat("Estimated co-data weights: \n")
   cat(x$w)
