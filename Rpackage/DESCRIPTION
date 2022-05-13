@@ -1,8 +1,8 @@
 Package: ecpc
 Type: Package
 Title: Flexible Co-Data Learning for High-Dimensional Prediction
-Version: 3.0
-Date: 2022-03-22
+Version: 3.1
+Date: 2022-05-13
 Authors@R: c(person(c("Mirrelijn","M."), "van Nee", role = c("aut", "cre"),
                      email = "m.vannee@amsterdamumc.nl"),
               person(c("Lodewyk","F.A."), "Wessels", role = "aut"),
@@ -26,4 +26,4 @@ Description: Fit linear, logistic and Cox survival regression models penalised w
   The name 'ecpc' stands for Empirical Bayes, Co-data learnt, Prediction and Covariate selection.
   See Van Nee et al. (2020) <arXiv:2005.04010>.
 License: GPL (>= 3)
-URL: https://arxiv.org/abs/2005.04010
+URL: http://dx.doi.org/10.1002/sim.9162
