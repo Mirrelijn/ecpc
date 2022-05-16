@@ -1,8 +1,13 @@
 #Replication script for all analyses, figures and tables in the application note for ecpc
 #Note: press alt+O in Rstudio to fold code to headings
 
-#setwd("...") #set working directory to desired folder
+setwd("C:\\Users\\VNOB-0728\\Documents\\Server\\ecpc\\ecpc\\Code application note") #set working directory to desired folder
+pathResults <- ""
+pathFigures <- ""
 #knitr::spin("Replication_all.R")
+
+starttime<-proc.time()[[3]]
+
 #make sure the following packages are installed correctly:
 if(!requireNamespace("ggplot2")) install.packages("ggplot2")
 if(!requireNamespace("ggpubr")) install.packages("ggpubr")
@@ -19,7 +24,8 @@ if(!requireNamespace("pROC")) install.packages("pROC")
 if(!requireNamespace("devtools")) install.packages("devtools")
 library(devtools)
 if(!requireNamespace("fwelnet")) install_github("kjytay/fwelnet")
-if(!requireNamespace("CoRF")) install_github("DennisBeest/CoRF") 
+if(!requireNamespace("CoRF")) install_github("DennisBeest/CoRF")
+if(!requireNamespace("ggh4x")) install_github("teunbrand/ggh4x")
 
 
 #Default settings to run everything----
@@ -45,9 +51,8 @@ run_example <- TRUE #example code in the paper
 #full analyses for 4 different settings:
 run_withConstraints <- TRUE
 run_withoutConstraints <- TRUE
-run_transformed <- TRUE
 run_withConstraints2 <- TRUE
-
+run_lasso <- TRUE
 
 
 
@@ -85,7 +90,7 @@ Z2 <- rnorm(p,mean=0,sd=1) #random, non-informative co-data
 Z <- cbind( Z1 , Z2 ) #(px2)-dimensional co-data matrix
 
 #Fit model----
-fit <- ecpc(Y,X,Z=list(Z),X2=X2,Y2=Y2)
+fit <- ecpc(Y,X,Z=list(Z),X2=X2,Y2=Y2, postselection=FALSE)
 summary(fit$beta) #fitted regression coefficients
 fit$gamma*fit$tauglobal #fitted co-data weights
 
@@ -100,8 +105,8 @@ p1
 p2 <- plot(fit, show="priorweights", Z=list(Z)) #plot prior variances per co-data variable
 p2
 ggarrange(plotlist=list(p1,p2))
-ggsave(filename=paste("FigExample",figno,".pdf",sep=""),
-       width=1.5*wdthpdf, height=hghtpdf)
+#ggsave(filename=paste("FigExample",figno,".pdf",sep=""),
+#       width=1.5*wdthpdf, height=hghtpdf)
 figno <- figno + 1
 
 new_penalties <- penalties(fit, tauglobal = fit$tauglobal * 2, Z=list(Z)) #compute penalties     
@@ -125,7 +130,11 @@ Z.all <- list(Z1=Z1.s,Z2=Z2.s)
 paraPen.all <- list(Z1=list(S1=S1.Z1), Z2=list(S1=S1.Z2))
 
 #Fit model with splines----
-fit.gam <- ecpc(Y, X, Z = Z.all, paraPen = paraPen.all, intrcpt.bam=TRUE, X2=X2, Y2=Y2)
+fit.gam <- ecpc(Y, X, Z = Z.all, paraPen = paraPen.all, intrcpt.bam=TRUE, 
+                X2=X2, Y2=Y2, postselection=FALSE)
+fit.gam$MSEecpc
+fit.gam$MSEridge
+
 head(fit.gam$gamma*fit.gam$tauglobal) #fitted co-data spline coefficients
 fit.gam$gamma0*fit.gam$tauglobal #fitted co-data intercept 
 
@@ -135,8 +144,8 @@ values <- list(Z1, Z2)
 p2<-plot(fit.gam, show="priorweights", Z=Z.all, values = values) #continuous values the x-axis
 p2
 ggarrange(plotlist=list(p1,p2))
-ggsave(filename=paste("FigExample",figno,".pdf",sep=""),
-       width=3*wdthpdf, height=hghtpdf)
+#ggsave(filename=paste("FigExample",figno,".pdf",sep=""),
+#       width=3*wdthpdf, height=hghtpdf)
 figno <- figno + 1
 
 #plot contribution of one co-data source directly----
@@ -153,15 +162,18 @@ Con.Z2 <- createCon(G=30, shape="convex")
 paraCon <- list(Z1=Con.Z1, Z2=Con.Z2)
 
 #Fit model with shape constrained splines----
-fit.scam <- ecpc(Y, X, Z = Z.all, paraPen = paraPen.all, paraCon = paraCon, X2=X2, Y2=Y2)
+fit.scam <- ecpc(Y, X, Z = Z.all, paraPen = paraPen.all, paraCon = paraCon, 
+                 X2=X2, Y2=Y2, postselection=FALSE)
+fit.scam$MSEecpc
+fit.scam$MSEridge
 fit.scam$gamma*fit.scam$tauglobal #fitted co-data spline coefficients
 fit.scam$w #fitted co-data weights
 fit.scam$gamma0*fit.scam$tauglobal #fitted co-data intercept excluded by default
 
 p1<-plot(fit.scam, show="priorweights", Z=Z.all, values=values)
 ggarrange(plotlist=list(p1))
-ggsave(filename=paste("FigExample",figno,".pdf",sep=""),
-       width=1.5*wdthpdf, height=hghtpdf)
+#ggsave(filename=paste("FigExample",figno,".pdf",sep=""),
+#       width=1.5*wdthpdf, height=hghtpdf)
 figno <- figno + 1
 
 #plot shape-constrained contribution
@@ -720,9 +732,9 @@ timeTable <- dfAll[dfAll$Covariate==1,] %>% group_by(method,bam.method,G) %>%
 g <- G[1]
 Sim <- 1
 
-figname <- paste(pathFigures,"Estimates_G",g,"bammethod.pdf",sep="")
-pdf(width = wdthpdf*1.2, height = hghtpdf,
-    file = figname)
+# figname <- paste(pathFigures,"Estimates_G",g,"bammethod.pdf",sep="")
+# pdf(width = wdthpdf*1.2, height = hghtpdf,
+#     file = figname)
 ggplot(dfGAMs[dfGAMs$Sim==Sim & dfGAMs$Transform==F & dfGAMs$G%in%c(1,G) ,])+
   aes(x=Z,col=bam.method)+
   facet_grid(.~Codata,scales="free_x")+
@@ -737,13 +749,13 @@ ggplot(dfGAMs[dfGAMs$Sim==Sim & dfGAMs$Transform==F & dfGAMs$G%in%c(1,G) ,])+
         legend.text=element_text(size=ts),
         legend.title=element_text(size=ts+2),
         strip.text=element_text(size=ts))#,
-dev.off()
+#dev.off()
 
 #Figure estimated variance vs continuous co-data for all simulations, fixed G and fixed bam.method----
 g <- G[1]
-figname <- paste(pathFigures,"Estimates_G",g,"BW2.pdf",sep="")
-pdf(width = wdthpdf*1.2, height = hghtpdf*2,
-    file = figname)
+# figname <- paste(pathFigures,"Estimates_G",g,"BW2.pdf",sep="")
+# pdf(width = wdthpdf*1.2, height = hghtpdf*2,
+#     file = figname)
 ggplot(dfEst[dfEst$G%in%c(1,2,g,7) & dfEst$Transform==F &
                dfEst$bam.method%in%c("ML","none","splits"),])+# & dfEst$method=="ML",])+
   aes(x=Z)+
@@ -763,13 +775,13 @@ ggplot(dfEst[dfEst$G%in%c(1,2,g,7) & dfEst$Transform==F &
         legend.text=element_text(size=ts),
         legend.title=element_text(size=ts+2),
         strip.text=element_text(size=ts))#,
-dev.off()
+#dev.off()
 
 #Figure estimated variance vs continuous co-data for all simulations, gam only, fixed G and different bam.method----
 g <- G[1]
-figname <- paste(pathFigures,"Estimates_G",g,"GAM.pdf",sep="")
-pdf(width = wdthpdf*1.2, height = hghtpdf*2,
-    file = figname)
+# figname <- paste(pathFigures,"Estimates_G",g,"GAM.pdf",sep="")
+# pdf(width = wdthpdf*1.2, height = hghtpdf*2,
+#     file = figname)
 ggplot(dfEstGAMs[dfEstGAMs$G%in%c(1,2,g) & dfEstGAMs$Transform==F ,])+
   aes(x=Z)+
   facet_grid(bam.method~Codata,scales="free_x")+
@@ -786,7 +798,7 @@ ggplot(dfEstGAMs[dfEstGAMs$G%in%c(1,2,g) & dfEstGAMs$Transform==F ,])+
         legend.text=element_text(size=ts),
         legend.title=element_text(size=ts+2),
         strip.text=element_text(size=ts))#,
-dev.off()
+#dev.off()
 
 
 
@@ -803,9 +815,9 @@ temp2 <- rbind(temp,temp2)
 temp2$method <- factor(temp2$method, levels=unique(temp2$method)[c(1,2,4,5,6,3)],
                        labels=unique(temp2$method)[c(1,2,4,5,6,3)])
 
-figname <- paste(pathFigures,"Prediction_G",g,".pdf",sep="")
-pdf(width = wdthpdf*1.2, height = hghtpdf,
-    file = figname)
+# figname <- paste(pathFigures,"Prediction_G",g,".pdf",sep="")
+# pdf(width = wdthpdf*1.2, height = hghtpdf,
+#     file = figname)
 ggplot(temp2[temp2$Transform==F,])+#& !(dfPred$Codata=="noninformative"),])+
   aes(x=method,y=MSE)+
   #geom_boxplot(data=temp2[temp2$method=="ridge",],aes(fill=method))+ #ridge prediction performance
@@ -822,7 +834,7 @@ ggplot(temp2[temp2$Transform==F,])+#& !(dfPred$Codata=="noninformative"),])+
         legend.text=element_text(size=ts),
         legend.title=element_text(size=ts+2),
         strip.text=element_text(size=ts))#,
-dev.off()
+#dev.off()
 
 #Figure boxplot prediction performance vs co-data setting for all simulations, gam only, fixed G and different bam.method----
 g <- G[1]
@@ -837,9 +849,9 @@ temp2 <- rbind(temp,temp2)
 temp2$bam.method <- factor(temp2$bam.method, levels=unique(temp2$bam.method)[c(1,4,2,3,5)],
                            labels=c("ridge",unique(temp2$bam.method)[c(4,2,3,5)]))
 
-figname <- paste(pathFigures,"Prediction_G",g,"GAM.pdf",sep="")
-pdf(width = wdthpdf*1.2, height = hghtpdf,
-    file = figname)
+# figname <- paste(pathFigures,"Prediction_G",g,"GAM.pdf",sep="")
+# pdf(width = wdthpdf*1.2, height = hghtpdf,
+#     file = figname)
 ggplot(temp2[temp2$Transform==F,])+#& !(dfPred$Codata=="noninformative"),])+
   aes(x=bam.method,y=MSE)+
   #geom_boxplot(data=temp2[temp2$method=="ridge",],aes(fill=method))+ #ridge prediction performance
@@ -855,7 +867,7 @@ ggplot(temp2[temp2$Transform==F,])+#& !(dfPred$Codata=="noninformative"),])+
         legend.text=element_text(size=ts),
         legend.title=element_text(size=ts+2),
         strip.text=element_text(size=ts))#,
-dev.off()
+#dev.off()
 
 
 
@@ -1333,28 +1345,28 @@ dfAll$Codata <- factor(dfAll$Codata,levels=unique(dfAll$Codata),
                        labels=c("Random","Informative+monotone","Informative+convex"))
 
 dfPred <- dfAll %>% group_by(method,Codata,TypeTuning,Tuningparam,TypeTuning2,Tuningparam2) %>% 
-  summarise(meanMSE=mean(MSEecpc),method2="EN",
-            q50MSE = quantile(MSEecpc,0.5),
-            q95MSE = quantile(MSEecpc,0.95),q05MSE = quantile(MSEecpc,0.05),
-            q75MSE = quantile(MSEecpc,0.75),q25MSE = quantile(MSEecpc,0.25),
-            meanMSEtrain=mean(MSEtrain),method2="EN",
-            q50MSEtrain = quantile(MSEtrain,0.5),
-            q95MSEtrain = quantile(MSEtrain,0.95),q05MSEtrain = quantile(MSEtrain,0.05),
-            q75MSEtrain = quantile(MSEtrain,0.75),q25MSEtrain = quantile(MSEtrain,0.25),
-            meansensitivity=mean(sensitivity),
+  summarise(meanMSE=mean(MSEecpc,na.rm=TRUE),method2="EN",
+            q50MSE = quantile(MSEecpc,0.5,na.rm=TRUE),
+            q95MSE = quantile(MSEecpc,0.95,na.rm=TRUE),q05MSE = quantile(MSEecpc,0.05,na.rm=TRUE),
+            q75MSE = quantile(MSEecpc,0.75,na.rm=TRUE),q25MSE = quantile(MSEecpc,0.25,na.rm=TRUE),
+            meanMSEtrain=mean(MSEtrain,na.rm=TRUE),method2="EN",
+            q50MSEtrain = quantile(MSEtrain,0.5,na.rm=TRUE),
+            q95MSEtrain = quantile(MSEtrain,0.95,na.rm=TRUE),q05MSEtrain = quantile(MSEtrain,0.05,na.rm=TRUE),
+            q75MSEtrain = quantile(MSEtrain,0.75,na.rm=TRUE),q25MSEtrain = quantile(MSEtrain,0.25,na.rm=TRUE),
+            meansensitivity=mean(sensitivity,na.rm=TRUE),
             q50sens = quantile(sensitivity,0.5,na.rm=T),
             q95sens = quantile(sensitivity,0.95,na.rm=T),q05sens = quantile(sensitivity,0.05,na.rm=T),
             q75sens = quantile(sensitivity,0.75,na.rm=T),q25sens = quantile(sensitivity,0.25,na.rm=T),
-            meanprecision=mean(precision),
+            meanprecision=mean(precision,na.rm=TRUE),
             q50prec = quantile(precision,0.5,na.rm=T),
             q95prec = quantile(precision,0.95,na.rm=T),q05prec = quantile(precision,0.05,na.rm=T),
             q75prec = quantile(precision,0.75,na.rm=T),q25prec = quantile(precision,0.25,na.rm=T)) %>% ungroup()
 
 
 #Figure MSE for all simulations, tuning parameter 2----
-figname <- paste(pathFigures,"Prediction_sparseMSE.pdf",sep="")
-pdf(width = wdthpdf*1.8, height = hghtpdf,
-    file = figname)
+# figname <- paste(pathFigures,"Prediction_sparseMSE.pdf",sep="")
+# pdf(width = wdthpdf*1.8, height = hghtpdf,
+#     file = figname)
 ggplot(dfPred)+# & dfEst$method=="ML",])+
   aes(x=Tuningparam2, col=method, fill=method)+
   facet_grid(.~Codata)+
@@ -1375,12 +1387,12 @@ ggplot(dfPred)+# & dfEst$method=="ML",])+
         legend.text=element_text(size=ts),
         legend.title=element_text(size=ts+2),
         strip.text=element_text(size=ts))#,
-dev.off()
+#dev.off()
 
 #Figure sensitivity for all simulations, tuning parameter 2----
-figname <- paste(pathFigures,"Prediction_sparseSens.pdf",sep="")
-pdf(width = wdthpdf*1.2, height = hghtpdf*2,
-    file = figname)
+# figname <- paste(pathFigures,"Prediction_sparseSens.pdf",sep="")
+# pdf(width = wdthpdf*1.2, height = hghtpdf*2,
+#     file = figname)
 ggplot(dfPred)+# & dfEst$method=="ML",])+
   aes(x=Tuningparam2, linetype=TypeTuning2, col=method, fill=method)+
   facet_grid(.~Codata)+
@@ -1398,13 +1410,13 @@ ggplot(dfPred)+# & dfEst$method=="ML",])+
         legend.text=element_text(size=ts),
         legend.title=element_text(size=ts+2),
         strip.text=element_text(size=ts))#,
-dev.off()
+#dev.off()
 
 
 #Figure precision for all simulations----
-figname <- paste(pathFigures,"Prediction_sparsePrec.pdf",sep="")
-pdf(width = wdthpdf*1.2, height = hghtpdf*2,
-    file = figname)
+# figname <- paste(pathFigures,"Prediction_sparsePrec.pdf",sep="")
+# pdf(width = wdthpdf*1.2, height = hghtpdf*2,
+#     file = figname)
 ggplot(dfPred)+# & dfEst$method=="ML",])+
   aes(x=Tuningparam2, linetype=TypeTuning2, col=method, fill=method)+
   facet_grid(.~Codata)+
@@ -1422,12 +1434,12 @@ ggplot(dfPred)+# & dfEst$method=="ML",])+
         legend.text=element_text(size=ts),
         legend.title=element_text(size=ts+2),
         strip.text=element_text(size=ts))#,
-dev.off()
+#dev.off()
 
 #Figure sensitivity vs precision for all simulations----
-figname <- paste(pathFigures,"Prediction_sparseSensPrec.pdf",sep="")
-pdf(width = wdthpdf*1.8, height = hghtpdf,
-    file = figname)
+# figname <- paste(pathFigures,"Prediction_sparseSensPrec.pdf",sep="")
+# pdf(width = wdthpdf*1.8, height = hghtpdf,
+#     file = figname)
 ggplot(dfPred)+# & dfEst$method=="ML",])+
   aes(col=method, shape=TypeTuning2)+
   facet_grid(.~Codata)+
@@ -1445,7 +1457,7 @@ ggplot(dfPred)+# & dfEst$method=="ML",])+
         legend.text=element_text(size=ts),
         legend.title=element_text(size=ts+2),
         strip.text=element_text(size=ts))#,
-dev.off()
+#dev.off()
 
 
 ###############################################################################
@@ -1455,6 +1467,7 @@ dev.off()
 
 #Load packages----
 library(ecpc)
+library(squeezy)
 library(devtools)
 library(CoRF) #load package
 library(ggplot2)
@@ -1528,17 +1541,25 @@ if(run_example){
   sparseModels <- postSelect(Res, X=TrainData, Y=RespTrain, maxsel=maxSel)
   
   
+  #with squeezy for lasso
+  tic <- proc.time()[[3]]
+  sparseModel2 <- squeezy(Y=RespTrain, X=TrainData, alpha=1, 
+                          lambdas=Res$penalties,
+                          X2=ValidationData, Y2=RespValidationNum)
+  toc <- proc.time()[[3]]-tic
+  
   #concatenate results on predictions in data frame
   ntest <- length(RespValidation) #number of test samples in the validation data
   p<-dim(CoDataTrain)[1] #number of genes
-  df<-data.frame("Ypred"= c(Res$Ypred, Res$Ypredridge, c(Res$YpredPost)),
-                 "Truth" = rep(RespValidationNum, 2+length(maxSel)),
-                 "Sample" = rep(1:ntest,2+length(maxSel)),
-                 "NumberSelectedVars" = rep(c(sum(Res$beta!=0),p,maxSel),each=ntest),
-                 "Method" = as.factor(rep(c("ecpc","ordinary.ridge",rep("ecpc",length(maxSel))),each=ntest)),
-                 "Sparsity" = as.factor(rep(c("dense","dense", rep("sparse",length(maxSel))),each=ntest)),
+  df<-data.frame("Ypred"= c(Res$Ypred, Res$Ypredridge, 
+                            c(Res$YpredPost),c(sparseModel2$YpredApprox)),
+                 "Truth" = rep(RespValidationNum, 2+length(maxSel)+1),
+                 "Sample" = rep(1:ntest,2+length(maxSel)+1),
+                 "NumberSelectedVars" = rep(c(sum(Res$beta!=0),p,maxSel,sum(sparseModel2$betaApprox!=0)),each=ntest),
+                 "Method" = as.factor(rep(c("ecpc","ordinary.ridge",rep("ecpc",length(maxSel)),"ecpc+squeezy"),each=ntest)),
+                 "Sparsity" = as.factor(rep(c("dense","dense", rep("sparse",length(maxSel)),"sparse"),each=ntest)),
                  "MethodxNumberVars" = as.factor(rep(c("ecpc","ordinary.ridge",
-                                                       paste("ecpc",maxSel,"vars",sep="")),each=ntest)))
+                                                       paste("ecpc",maxSel,"vars",sep=""),"ecpc+squeezy"),each=ntest)))
   
   #Compute AUC for each method and store in a data frame
   dfAUC <- data.frame()
@@ -1568,11 +1589,11 @@ values_example <- values
 
 
 #Run all analyses and save results for plotting----
-
 Z_all <- list(); values <- list()
 Z_all_rank <- list(); values_rank <- list()
 for(g in 1:length(G_all)){
   #Format co-data----
+  set.seed(3)
   G <- G_all[g] #number of splines
   #co-data source 1: genes corresponding to a known signature or not
   GroupsetSig <- createGroupset(as.factor(CoDataTrain$RoepmanGenes)) #list of groups
@@ -1628,6 +1649,7 @@ for(g in 1:length(G_all)){
   print(fname)
   
   if(run_withConstraints){
+    #ecpc
     tic <- proc.time()[[3]]
     Res<-ecpc(Y=RespTrain, X=TrainData, #training data
               Z=Z_all[[g]], 
@@ -1641,17 +1663,25 @@ for(g in 1:length(G_all)){
     
     plot(Res, show = "priorweights", Z=Z_all[[g]], values=values[[g]])
     
+    #with squeezy for lasso
+    tic <- proc.time()[[3]]
+    sparseModel2 <- squeezy(Y=RespTrain, X=TrainData, alpha=1, 
+                            lambdas=Res$penalties,
+                            X2=ValidationData, Y2=RespValidationNum)
+    toc <- proc.time()[[3]]-tic
+    
     #concatenate results on predictions in data frame
     ntest <- length(RespValidation) #number of test samples in the validation data
     p<-dim(CoDataTrain)[1] #number of genes
-    df<-data.frame("Ypred"= c(Res$Ypred, Res$Ypredridge, c(Res$YpredPost)),
-                   "Truth" = rep(RespValidationNum, 2+length(maxSel)),
-                   "Sample" = rep(1:ntest,2+length(maxSel)),
-                   "NumberSelectedVars" = rep(c(sum(Res$beta!=0),p,maxSel),each=ntest),
-                   "Method" = as.factor(rep(c("ecpc","ordinary.ridge",rep("ecpc",length(maxSel))),each=ntest)),
-                   "Sparsity" = as.factor(rep(c("dense","dense", rep("sparse",length(maxSel))),each=ntest)),
+    df<-data.frame("Ypred"= c(Res$Ypred, Res$Ypredridge, 
+                              c(Res$YpredPost),c(sparseModel2$YpredApprox)),
+                   "Truth" = rep(RespValidationNum, 2+length(maxSel)+1),
+                   "Sample" = rep(1:ntest,2+length(maxSel)+1),
+                   "NumberSelectedVars" = rep(c(sum(Res$beta!=0),p,maxSel,sum(sparseModel2$betaApprox!=0)),each=ntest),
+                   "Method" = as.factor(rep(c("ecpc","ordinary.ridge",rep("ecpc",length(maxSel)),"ecpc+squeezy"),each=ntest)),
+                   "Sparsity" = as.factor(rep(c("dense","dense", rep("sparse",length(maxSel)),"sparse"),each=ntest)),
                    "MethodxNumberVars" = as.factor(rep(c("ecpc","ordinary.ridge",
-                                                         paste("ecpc",maxSel,"vars",sep="")),each=ntest)))
+                                                         paste("ecpc",maxSel,"vars",sep=""),"ecpc+squeezy"),each=ntest)))
     
     #Compute AUC for each method and store in a data frame
     dfAUC <- data.frame()
@@ -1690,66 +1720,25 @@ for(g in 1:length(G_all)){
     
     plot(Res, show = "priorweights", Z=Z_all[[g]], values=values[[g]])
     
-    #concatenate results on predictions in data frame
-    ntest <- length(RespValidation) #number of test samples in the validation data
-    p<-dim(CoDataTrain)[1] #number of genes
-    df<-data.frame("Ypred"= c(Res$Ypred, Res$Ypredridge, c(Res$YpredPost)),
-                   "Truth" = rep(RespValidationNum, 2+length(maxSel)),
-                   "Sample" = rep(1:ntest,2+length(maxSel)),
-                   "NumberSelectedVars" = rep(c(sum(Res$beta!=0),p,maxSel),each=ntest),
-                   "Method" = as.factor(rep(c("ecpc","ordinary.ridge",rep("ecpc",length(maxSel))),each=ntest)),
-                   "Sparsity" = as.factor(rep(c("dense","dense", rep("sparse",length(maxSel))),each=ntest)),
-                   "MethodxNumberVars" = as.factor(rep(c("ecpc","ordinary.ridge",
-                                                         paste("ecpc",maxSel,"vars",sep="")),each=ntest)))
-    
-    #Compute AUC for each method and store in a data frame
-    dfAUC <- data.frame()
-    for (i in levels(df$MethodxNumberVars)) {
-      temp <- data.frame("Method" = unique(df$Method[df$MethodxNumberVars==i]),
-                         "Sparsity"=unique(df$Sparsity[df$MethodxNumberVars==i]),
-                         "MethodxNumberVars"=i)
-      rocpROC <- pROC::roc(predictor = df$Ypred[df$MethodxNumberVars == i], 
-                           response = df$Truth[df$MethodxNumberVars == i], 
-                           smooth = F, auc = T, levels = c(0, 1), direction = "<")
-      temp$AUC <- rocpROC$auc[1]
-      temp$NumberSelectedVars <- mean(df$NumberSelectedVars[df$MethodxNumberVars == i])
-      dfAUC <- rbind(dfAUC, temp)
-    }
-    lims <- range(dfAUC$AUC,0.5) #set limits for AUC plots
-    dfAUC$Codata <- "all"
-    
-    save(Res,df,dfAUC,file=fname)
-  }
-  
-  
-  #Fit model 3: all three co-data matrices, no constraints, with transformed scale----
-  fname <- paste("Res3G",g,".Rdata",sep="")
-  print(fname)
-  
-  if(run_transformed){
+    #with squeezy for lasso
     tic <- proc.time()[[3]]
-    Res<-ecpc(Y=RespTrain, X=TrainData, #training data
-              Z=Z_all_rank[[g]], 
-              paraPen = list(Z2=list(S1=S1_cor), Z3=list(S1=S1_pvals)),
-              Y2=RespValidationNum, X2=ValidationData, #test data
-              maxsel=maxSel) #maximum number of selected covariates for posterior selection
-    toc <- proc.time()[[3]]; 
-    print(toc - tic) #elapsed time
-    Res$time <- toc-tic
-    
-    plot(Res, show = "priorweights", Z=Z_all_rank[[g]], values=values[[g]])
+    sparseModel2 <- squeezy(Y=RespTrain, X=TrainData, alpha=1, 
+                            lambdas=Res$penalties,
+                            X2=ValidationData, Y2=RespValidationNum)
+    toc <- proc.time()[[3]]-tic
     
     #concatenate results on predictions in data frame
     ntest <- length(RespValidation) #number of test samples in the validation data
     p<-dim(CoDataTrain)[1] #number of genes
-    df<-data.frame("Ypred"= c(Res$Ypred, Res$Ypredridge, c(Res$YpredPost)),
-                   "Truth" = rep(RespValidationNum, 2+length(maxSel)),
-                   "Sample" = rep(1:ntest,2+length(maxSel)),
-                   "NumberSelectedVars" = rep(c(sum(Res$beta!=0),p,maxSel),each=ntest),
-                   "Method" = as.factor(rep(c("ecpc","ordinary.ridge",rep("ecpc",length(maxSel))),each=ntest)),
-                   "Sparsity" = as.factor(rep(c("dense","dense", rep("sparse",length(maxSel))),each=ntest)),
+    df<-data.frame("Ypred"= c(Res$Ypred, Res$Ypredridge, 
+                              c(Res$YpredPost),c(sparseModel2$YpredApprox)),
+                   "Truth" = rep(RespValidationNum, 2+length(maxSel)+1),
+                   "Sample" = rep(1:ntest,2+length(maxSel)+1),
+                   "NumberSelectedVars" = rep(c(sum(Res$beta!=0),p,maxSel,sum(sparseModel2$betaApprox!=0)),each=ntest),
+                   "Method" = as.factor(rep(c("ecpc","ordinary.ridge",rep("ecpc",length(maxSel)),"ecpc+squeezy"),each=ntest)),
+                   "Sparsity" = as.factor(rep(c("dense","dense", rep("sparse",length(maxSel)),"sparse"),each=ntest)),
                    "MethodxNumberVars" = as.factor(rep(c("ecpc","ordinary.ridge",
-                                                         paste("ecpc",maxSel,"vars",sep="")),each=ntest)))
+                                                         paste("ecpc",maxSel,"vars",sep=""),"ecpc+squeezy"),each=ntest)))
     
     #Compute AUC for each method and store in a data frame
     dfAUC <- data.frame()
@@ -1770,8 +1759,9 @@ for(g in 1:length(G_all)){
     save(Res,df,dfAUC,file=fname)
   }
   
-  #Fit model 4: all three co-data matrices, with positivity constraints----
-  fname <- paste("Res4G",g,".Rdata",sep="")
+  
+  #Fit model 3: all three co-data matrices, with positivity constraints----
+  fname <- paste("Res3G",g,".Rdata",sep="")
   print(fname)
   
   if(run_withConstraints2){
@@ -1788,17 +1778,25 @@ for(g in 1:length(G_all)){
     
     plot(Res, show = "priorweights", Z=Z_all[[g]], values=values[[g]])
     
+    #with squeezy for lasso
+    tic <- proc.time()[[3]]
+    sparseModel2 <- squeezy(Y=RespTrain, X=TrainData, alpha=1, 
+                            lambdas=Res$penalties,
+                            X2=ValidationData, Y2=RespValidationNum,reCV=T)
+    toc <- proc.time()[[3]]-tic
+    
     #concatenate results on predictions in data frame
     ntest <- length(RespValidation) #number of test samples in the validation data
     p<-dim(CoDataTrain)[1] #number of genes
-    df<-data.frame("Ypred"= c(Res$Ypred, Res$Ypredridge, c(Res$YpredPost)),
-                   "Truth" = rep(RespValidationNum, 2+length(maxSel)),
-                   "Sample" = rep(1:ntest,2+length(maxSel)),
-                   "NumberSelectedVars" = rep(c(sum(Res$beta!=0),p,maxSel),each=ntest),
-                   "Method" = as.factor(rep(c("ecpc","ordinary.ridge",rep("ecpc",length(maxSel))),each=ntest)),
-                   "Sparsity" = as.factor(rep(c("dense","dense", rep("sparse",length(maxSel))),each=ntest)),
+    df<-data.frame("Ypred"= c(Res$Ypred, Res$Ypredridge, 
+                              c(Res$YpredPost),c(sparseModel2$YpredApprox)),
+                   "Truth" = rep(RespValidationNum, 2+length(maxSel)+1),
+                   "Sample" = rep(1:ntest,2+length(maxSel)+1),
+                   "NumberSelectedVars" = rep(c(sum(Res$beta!=0),p,maxSel,sum(sparseModel2$betaApprox!=0)),each=ntest),
+                   "Method" = as.factor(rep(c("ecpc","ordinary.ridge",rep("ecpc",length(maxSel)),"ecpc+squeezy"),each=ntest)),
+                   "Sparsity" = as.factor(rep(c("dense","dense", rep("sparse",length(maxSel)),"sparse"),each=ntest)),
                    "MethodxNumberVars" = as.factor(rep(c("ecpc","ordinary.ridge",
-                                                         paste("ecpc",maxSel,"vars",sep="")),each=ntest)))
+                                                         paste("ecpc",maxSel,"vars",sep=""),"ecpc+squeezy"),each=ntest)))
     
     #Compute AUC for each method and store in a data frame
     dfAUC <- data.frame()
@@ -1818,6 +1816,43 @@ for(g in 1:length(G_all)){
     
     save(Res,df,dfAUC,file=fname)
   }
+  
+  #Fit lasso----
+  fname <- paste("Resg",g,"Lasso.Rdata",sep="")
+  print(fname)
+  
+  if(run_lasso){
+    ntest <- length(RespValidation) #number of test samples in the validation data
+    p<-dim(CoDataTrain)[1] #number of genes
+    
+    tic <- proc.time()[[3]]
+    fit.glmnet <- glmnet::glmnet(y=RespTrain,x=TrainData,
+                                    family="binomial",alpha=1)
+    dfAUC <- data.frame()
+    for(k in 2:length(fit.glmnet$lambda)){
+      beta.glmnet <- coef(fit.glmnet,s=fit.glmnet$lambda[k], exact=TRUE)
+      Ypred.glmnet <- c(predict(fit.glmnet, newx = ValidationData, 
+                                s = fit.glmnet$lambda[k], type="response", exact=TRUE))
+
+      temp <- data.frame("Method" = "lasso",
+                         "Sparsity"= "sparse",
+                         "MethodxNumberVars"=paste("lasso",sum(beta.glmnet!=0),sep=""))
+      rocpROC <- pROC::roc(predictor = Ypred.glmnet, 
+                           response = RespValidationNum, 
+                           smooth = F, auc = T, levels = c(0, 1), direction = "<")
+      temp$AUC <- rocpROC$auc[1]
+      temp$NumberSelectedVars <- sum(beta.glmnet!=0)
+      dfAUC <- rbind(dfAUC, temp)
+    }
+    #take length(maxSel) unique values
+    ind_unique <- sapply(unique(dfAUC$NumberSelectedVars),function(x)rev(which(dfAUC$NumberSelectedVars==x))[1])
+    dfAUC <- dfAUC[ind_unique[c(1:10,floor(seq(11,length(ind_unique),length.out=10)))],]
+    dfAUC$Codata <- "none"
+    toc <- proc.time()[[3]]; 
+    print(toc - tic) #elapsed time
+    
+    save(fit.glmnet,dfAUC,file=fname)
+  }
 }
 
 #Plots: general parameters----
@@ -1831,17 +1866,28 @@ ps <- 2 #basis point size in figures
 sz <- 2 #point size
 strk <- 1.5 #stroke size
 palette <- "Dark2"
+gg_color_hue <- function(n) {
+  hues = seq(15, 375, length = n + 1)
+  hcl(h = hues, l = 65, c = 100)[1:n]
+}
+colsAUC <- gg_color_hue(4)
 
 #Load data for plots----
 
 #analyses with other co-data model settings
-setting_names <- c("Positive+monotone constraints","Regular scale",
-                   "Transformed scale","Positive constraints")
+setting_names <- c("Positive+monotone constraints","GAM_ML",
+                   "Positive constraints")
 dfAUCall <- data.frame()
 dfVk <- list(data.frame(),data.frame(),data.frame())
 for(i in 1:length(setting_names)){
   for(g in 1:length(G_all)){
     fname <- paste("Res",i,"G",g,".Rdata",sep="")
+    load(fname)
+    dfAUC$Setting <- setting_names[i]
+    dfAUC$Groups <- G_all[g]
+    dfAUCall <- rbind(dfAUCall, dfAUC)
+    #lasso (same for settings)
+    fname <- paste("Resg",g,"Lasso.Rdata",sep="")
     load(fname)
     dfAUC$Setting <- setting_names[i]
     dfAUC$Groups <- G_all[g]
@@ -1881,14 +1927,17 @@ for(c in 1:3){
   dfVk[[c]]$Groups <- as.factor(dfVk[[c]]$Groups)
 }
 dfAUCall$Groups <- factor(dfAUCall$Groups)
-dfAUCall$Setting <- factor(dfAUCall$Setting, levels=unique(dfAUCall$Setting)[c(2,3,4,1)],
-                           labels=unique(dfAUCall$Setting)[c(2,3,4,1)])
-dfAUCall$SettingNum <- factor(dfAUCall$Setting, levels=unique(dfAUCall$Setting)[c(2,3,4,1)],
-                              labels=paste("Setting",1:4))
+dfAUCall$Setting <- factor(dfAUCall$Setting, levels=unique(dfAUCall$Setting)[c(2,3,1)],
+                           labels=unique(dfAUCall$Setting)[c(2,3,1)])
+dfAUCall$SettingNum <- factor(dfAUCall$Setting, levels=unique(dfAUCall$Setting)[c(2,3,1)],
+                              labels=paste("Setting",1:3))
+dfAUCall$Method <- as.character(dfAUCall$Method)
+dfAUCall$Method[grepl("vars",dfAUCall$MethodxNumberVars)] <- "ecpc+postSelect"
+
 #Plot example----
 
 plot(Res_example, show = "priorweights", Z=Z_example, values=values_example)
-ggsave(filename="Plot_example.pdf",width= wdthpdf*1.5, height = hghtpdf*0.75)
+#ggsave(filename="Plot_example.pdf",width= wdthpdf*1.5, height = hghtpdf*0.75)
 
 #Plot contribution of each co-data source----
 
@@ -1913,11 +1962,11 @@ for(c in 2:3){
 ggarrange(plotlist=p1, common.legend=TRUE, nrow=2, legend="right")
 
 dfVk2 <- rbind(dfVk[[2]],dfVk[[3]])
-dfVk2$SettingNum <- factor(dfVk2$Setting, levels=unique(dfVk2$Setting)[c(2,3,4,1)],
-                           labels=paste("Setting",1:4))
-figname <- paste("Estimates_LNM.pdf",sep="")
-pdf(width = wdthpdf*1.2, height = hghtpdf,
-    file = figname)
+dfVk2$SettingNum <- factor(dfVk2$Setting, levels=unique(dfVk2$Setting)[c(2,3,1)],
+                           labels=paste("Setting",1:3))
+# figname <- paste("Estimates_LNM.pdf",sep="")
+# pdf(width = wdthpdf*1.2, height = hghtpdf,
+#     file = figname)
 ggplot(dfVk2[dfVk2$Groups=="20",])+
   aes(x=values,y=Priorvar)+
   geom_line(aes(col=Setting),alpha=0.6,size=ls)+
@@ -1933,15 +1982,19 @@ ggplot(dfVk2[dfVk2$Groups=="20",])+
         legend.title=element_text(size=ts+2),
         legend.key.width = unit(2,"cm"),
         strip.text=element_text(size=ts))#,
-dev.off()
+#dev.off()
 
-figname <- paste("Estimates_LNM_groups.pdf",sep="")
-pdf(width = wdthpdf*1.8, height = hghtpdf,
-    file = figname)
+library(ggh4x)
+
+# figname <- paste("Estimates_LNM_groups.pdf",sep="")
+# pdf(width = wdthpdf*1.8, height = hghtpdf,
+#     file = figname)
 ggplot(dfVk2)+
   aes(x=values,y=Priorvar)+
   geom_line(aes(linetype=Groups),alpha=0.6,size=ls)+
   facet_wrap(Codata~SettingNum, scales="free", nrow=2)+
+  facetted_pos_scales(x = list(NULL,NULL,NULL,
+                               NULL,scale_x_log10(),scale_x_log10()))+
   #facet_wrap(Codata~SettingNum, scales="free_x", nrow=2)+
   labs(y="Prior variance", x="Continuous co-data variable")+
   guides(linetype=guide_legend(title="# Splines"))+
@@ -1954,7 +2007,7 @@ ggplot(dfVk2)+
         legend.title=element_text(size=ts+2),
         legend.key.width = unit(2,"cm"),
         strip.text=element_text(size=ts))#,
-dev.off()
+# dev.off()
 
 #Plot AUC----
 
@@ -1965,11 +2018,22 @@ pdf(width = wdthpdf*1.8, height = hghtpdf,
     file = figname)
 ggplot(dfAUCall[dfAUCall$Sparsity=="sparse",])+
   aes(x=NumberSelectedVars,y=AUC,col=Method)+
-  geom_point(size=ps)+
-  geom_line(size=ls,alpha=0.2)+
+  geom_point(aes(shape=Method),size=ps,stroke=1)+
+  geom_line(aes(linetype=Method),size=ls,alpha=0.2)+
   facet_grid(Groups~SettingNum)+
   geom_hline(data=dfAUCall[dfAUCall$Sparsity=="dense",],
-             aes(yintercept=AUC,col=Method), size=ls)+
+             aes(yintercept=AUC,col=Method,linetype=Method), size=ls)+
+  geom_point(data=dfAUCall[dfAUCall$Sparsity=="dense",],
+             aes(y=AUC,col=Method,shape=Method),x=1, size=0)+
+  scale_shape_manual(values=c("ecpc"=32,"ecpc+postSelect"=19,
+                              "ecpc+squeezy"=4,
+                              "ordinary.ridge"=32,"lasso"=17))+
+  scale_linetype_manual(values=c("ecpc"=1,"ecpc+postSelect"=1,
+                                 "ecpc+squeezy"=0,
+                                 "ordinary.ridge"=5,"lasso"=5))+
+  scale_color_manual(values=c("ecpc"=colsAUC[1],"ecpc+postSelect"=colsAUC[1],
+                                 "ecpc+squeezy"=colsAUC[1],
+                                 "ordinary.ridge"=colsAUC[3],"lasso"=colsAUC[3]))+
   coord_cartesian(ylim=lims)+
   labs(x="# variables")+
   theme_bw()+
@@ -1979,8 +2043,8 @@ ggplot(dfAUCall[dfAUCall$Sparsity=="sparse",])+
         axis.title.y=element_text(size=ts+2),
         legend.text=element_text(size=ts),
         legend.title=element_text(size=ts+2),
-        #legend.key.width = unit(2,"cm"),
-        legend.position = "bottom",
+        legend.key.width = unit(2,"cm"),
+        #legend.position = "bottom",
         strip.text=element_text(size=ts))#,
 dev.off()
 
@@ -1993,4 +2057,6 @@ dev.off()
 ###############################################################################
 
 #Session info----
+duration <- (proc.time()[[3]]-starttime)/60
+print(paste("Duration in minutes:",duration))
 sessionInfo()
