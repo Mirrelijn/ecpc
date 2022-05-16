@@ -8,8 +8,8 @@ or from this github-page;
 
 library(devtools); install_github("Mirrelijn/ecpc/Rpackage")
 
-A cheatsheet for the functions can be found in
-![Cheatsheet]("Cheatsheet_ecpc.png")
+A [cheat sheet]("Cheatsheet.pdf") for the functions is:
+![Cheatsheet](https://github.com/Mirrelijn/ecpc/blob/master/Cheatsheet_ecpc.png?raw=true)
 
 -------
 
