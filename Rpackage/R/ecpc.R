@@ -2863,54 +2863,58 @@ ecpc <- function(Y,X,
           if(hypershrinkage=="mgcv"){
             Alist <- lapply(indGrpsGlobal, function(ind) as.matrix(A[,ind,drop=FALSE]))
             names(Alist) <- paste("Z",1:length(Alist),sep="")
+            
             #make intercept
-            if(class(Rn2)[1]=="try-error"){
-              start <- 1; step <- 1000
-              part <- start:(start+step-1)
-              Aintrcpt <- ((L[x[part],,drop=FALSE]%*%R[,x,drop=FALSE])^2/c(V[x[part]]))%*%c(tauglobal[datablockNo[x]])
-              start <- start+step
-              while(start < length(x)){
-                part <- start:min(length(x),(start+step-1))
-                A2 <- ((L[x[part],,drop=FALSE]%*%R[,x,drop=FALSE])^2/c(V[x[part]]))%*%c(tauglobal[datablockNo[x]])
-                Aintrcpt <- rbind(Aintrcpt, A2)
-                rm(A2)
+            if(intrcpt.bam){
+              if(class(Rn2)[1]=="try-error"){
+                start <- 1; step <- 1000
+                part <- start:(start+step-1)
+                Aintrcpt <- ((L[x[part],,drop=FALSE]%*%R[,x,drop=FALSE])^2/c(V[x[part]]))%*%c(tauglobal[datablockNo[x]])
                 start <- start+step
-              }
-            }else{
-              if(class(Ln2)[1]== "try-error"){
-                if(class(Ln2half1)[1]=="try-error"){
-                  start <- 1; step <- 1000 #break up in parts of 1000 variables
-                  part <- start:(start+step-1)
-                  Ln2part1 <- try(t(apply(t(c(1/V[x[part]])*L[x[part],,drop=FALSE]), 2, rep, n) *
-                                      apply(L[x[part],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
-                  Aintrcpt <- Ln2part1 %*% c(R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE]) *
-                                                                   rep(1,length(x)) * c(tauglobal[datablockNo[x]])))
+                while(start < length(x)){
+                  part <- start:min(length(x),(start+step-1))
+                  A2 <- ((L[x[part],,drop=FALSE]%*%R[,x,drop=FALSE])^2/c(V[x[part]]))%*%c(tauglobal[datablockNo[x]])
+                  Aintrcpt <- rbind(Aintrcpt, A2)
+                  rm(A2)
                   start <- start+step
-                  while(start < length(x)){
-                    part <- start:min(length(x),(start+step-1))
-                    Ln2part1 <- try(t(apply(t(c(1/V[x[part]])*L[x[part],,drop=FALSE]), 2, rep, n) *
-                                        apply(L[x[part],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
-                    A <- rbind(A, Ln2part1 %*% c(R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE]) *
-                                                                       rep(1,length(x)) * c(tauglobal[datablockNo[x]]))))
-                    start <- start+step
-                  }
-                }else{
-                  half <- 1:floor(length(x)/2)
-                  Ln2half1 <- try(t(apply(t(c(1/V[x[half]])*L[x[half],,drop=FALSE]), 2, rep, n) *
-                                      apply(L[x[half],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
-                  Aintrcpt <- Ln2half1 %*% c(R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE]) *
-                                                                   rep(1,length(x)) * c(tauglobal[datablockNo[x]])))
-                  Ln2half1 <- try(t(apply(t(c(1/V[x[-half]])*L[x[-half],,drop=FALSE]), 2, rep, n) *
-                                      apply(L[x[-half],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
-                  Aintrcpt <- rbind(Aintrcpt, Ln2half1 %*% c(R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE]) *
-                                                                                   rep(1,length(x)) * c(tauglobal[datablockNo[x]]))))
                 }
               }else{
-                Aintrcpt <- Ln2 %*% c(R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE]) *
-                                                            rep(1,length(x)) * c(tauglobal[datablockNo[x]])))
+                if(class(Ln2)[1]== "try-error"){
+                  if(class(Ln2half1)[1]=="try-error"){
+                    start <- 1; step <- 1000 #break up in parts of 1000 variables
+                    part <- start:(start+step-1)
+                    Ln2part1 <- try(t(apply(t(c(1/V[x[part]])*L[x[part],,drop=FALSE]), 2, rep, n) *
+                                        apply(L[x[part],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
+                    Aintrcpt <- Ln2part1 %*% c(R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE]) *
+                                                                     rep(1,length(x)) * c(tauglobal[datablockNo[x]])))
+                    start <- start+step
+                    while(start < length(x)){
+                      part <- start:min(length(x),(start+step-1))
+                      Ln2part1 <- try(t(apply(t(c(1/V[x[part]])*L[x[part],,drop=FALSE]), 2, rep, n) *
+                                          apply(L[x[part],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
+                      Aintrcpt <- rbind(Aintrcpt, Ln2part1 %*% c(R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE]) *
+                                                                         rep(1,length(x)) * c(tauglobal[datablockNo[x]]))))
+                      start <- start+step
+                    }
+                  }else{
+                    half <- 1:floor(length(x)/2)
+                    Ln2half1 <- try(t(apply(t(c(1/V[x[half]])*L[x[half],,drop=FALSE]), 2, rep, n) *
+                                        apply(L[x[half],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
+                    Aintrcpt <- Ln2half1 %*% c(R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE]) *
+                                                                     rep(1,length(x)) * c(tauglobal[datablockNo[x]])))
+                    Ln2half1 <- try(t(apply(t(c(1/V[x[-half]])*L[x[-half],,drop=FALSE]), 2, rep, n) *
+                                        apply(L[x[-half],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
+                    Aintrcpt <- rbind(Aintrcpt, Ln2half1 %*% c(R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE]) *
+                                                                                     rep(1,length(x)) * c(tauglobal[datablockNo[x]]))))
+                  }
+                }else{
+                  Aintrcpt <- Ln2 %*% c(R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE]) *
+                                                              rep(1,length(x)) * c(tauglobal[datablockNo[x]])))
+                }
               }
+              Aintrcpt <- as.matrix(Aintrcpt)
             }
-            Aintrcpt <- as.matrix(Aintrcpt)
+            
             
             # Aintrcpt <- sapply(x,function(k){
             #     sum(t(c(1/V[k])*L[k,,drop=FALSE])%*%L[k,,drop=FALSE]*
