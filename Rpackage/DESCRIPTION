@@ -1,7 +1,7 @@
 Package: ecpc
 Type: Package
 Title: Flexible Co-Data Learning for High-Dimensional Prediction
-Version: 3.1
+Version: 3.1.1
 Date: 2022-05-13
 Authors@R: c(person(c("Mirrelijn","M."), "van Nee", role = c("aut", "cre"),
                      email = "m.vannee@amsterdamumc.nl"),
@@ -27,3 +27,4 @@ Description: Fit linear, logistic and Cox survival regression models penalised w
   See Van Nee et al. (2020) <arXiv:2005.04010>.
 License: GPL (>= 3)
 URL: http://dx.doi.org/10.1002/sim.9162
+RoxygenNote: 7.2.0

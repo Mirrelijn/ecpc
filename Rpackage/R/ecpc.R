@@ -2,6 +2,7 @@
 #Fit a generalised linear (linear, logistic) or Cox model, penalised with adaptive multi-group penalties.
 #The method combines empirical Bayes estimation for the group hyperparameters with an extra level of shrinkage
 #to be able to handle various co-data, including overlapping groups, hierarchical groups and continuous co-data.
+#In R-studio: press Alt+O to fold code into sections
 
 ecpc <- function(Y,X,
                  Z=NULL,paraPen=NULL,paraCon=NULL,intrcpt.bam=TRUE,bam.method="ML",
@@ -77,13 +78,13 @@ ecpc <- function(Y,X,
 
   #-1.1 Check variable input is as expected--------------------------------------------------
   #check response Y, missings not allowed
-  assert(checkVector(Y, any.missing=FALSE), checkMatrix(Y, any.missing=FALSE), 
+  checkmate::assert(checkVector(Y, any.missing=FALSE), checkMatrix(Y, any.missing=FALSE), 
          checkArray(Y, max.d=2, any.missing=FALSE))
-  assert(checkLogical(Y), checkFactor(Y, n.levels=2), checkNumeric(Y))
+  checkmate::assert(checkLogical(Y), checkFactor(Y, n.levels=2), checkNumeric(Y))
   
   #check observed data X, missings not allowed
-  assert(checkMatrix(X, any.missing=FALSE), checkArray(X, max.d=2, any.missing=FALSE))
-  assertNumeric(X)
+  checkmate::assert(checkMatrix(X, any.missing=FALSE), checkArray(X, max.d=2, any.missing=FALSE))
+  checkmate::assertNumeric(X)
   
   #check whether dimensions Y and X match
   if(checkVector(Y)){
@@ -101,9 +102,9 @@ ecpc <- function(Y,X,
     groupsets <- list(list(1:p))
   }else if(!is.null(Z)){
     #check if Z is provided as list of (sparse) matrices/arrays
-    assertList(Z, types=c("vector", "matrix", "array", "dgCMatrix"), min.len=1, any.missing=FALSE)
+    checkmate::assertList(Z, types=c("vector", "matrix", "array", "dgCMatrix"), min.len=1, any.missing=FALSE)
     for(g in 1:length(Z)){
-      assert(checkNumeric(Z[[g]], any.missing=FALSE), class(Z[[g]])[1]=="dgCMatrix")
+      checkmate::assert(checkNumeric(Z[[g]], any.missing=FALSE), class(Z[[g]])[1]=="dgCMatrix")
       if(is.vector(Z[[g]])) Z[[g]] <- matrix(Z[[g]],length(Z[[g]]),1)
       #check if number of rows of Z match number of columns X
       if(dim(Z[[g]])[1]!=dim(X)[2]){
@@ -118,22 +119,22 @@ ecpc <- function(Y,X,
       } 
       
       #check paraPen 
-      assertList(paraPen, types="list", null.ok = TRUE) #should be NULL or list
+      checkmate::assertList(paraPen, types="list", null.ok = TRUE) #should be NULL or list
       if(!is.null(paraPen)){
         #check if names match Zi, i=1,2,..
-        assertSubset(names(paraPen), paste("Z", 1:length(Z), sep=""), empty.ok=FALSE)
+        checkmate::assertSubset(names(paraPen), paste("Z", 1:length(Z), sep=""), empty.ok=FALSE)
         for(g in 1:length(Z)){
           nameZg <- paste("Z",g,sep="")
           if(nameZg%in%names(paraPen)){
-            assertList(paraPen[[nameZg]]) #should be named list
+            checkmate::assertList(paraPen[[nameZg]]) #should be named list
             #paraPen for mgcv may obtain L, rank, sp, Si with i a number 1,2,3,..
-            assertSubset(names(paraPen[[nameZg]]), 
+            checkmate::assertSubset(names(paraPen[[nameZg]]), 
                          c("L", "rank", "sp", paste("S",1:length(paraPen[[nameZg]]), sep="")))
             #elements Si, i=1,2,.. should be matrices and match number of columns of Zg
             for(nameSg in paste("S",1:length(paraPen[[nameZg]]), sep="")){
               if(nameSg%in%names(paraPen[[nameZg]])){
                 #check whether Sg is a matrix or 2-dimensional array
-                assert(checkMatrix(paraPen[[nameZg]][[nameSg]]),
+                checkmate::assert(checkMatrix(paraPen[[nameZg]][[nameSg]]),
                        checkArray(paraPen[[nameZg]][[nameSg]], d=2))
                 #check square matrix and dimension match co-data matrix
                 if(dim(Z[[g]])[2]!=dim(paraPen[[nameZg]][[nameSg]])[1] |
@@ -149,17 +150,17 @@ ecpc <- function(Y,X,
       } 
       
       #check paraCon
-      assertList(paraCon, types="list", null.ok = TRUE) #should be NULL or list
+      checkmate::assertList(paraCon, types="list", null.ok = TRUE) #should be NULL or list
       if(!is.null(paraCon)){
         #check if names match Zi, i=1,2,..
-        assertSubset(names(paraCon), paste("Z", 1:length(Z), sep=""), empty.ok=FALSE)
+        checkmate::assertSubset(names(paraCon), paste("Z", 1:length(Z), sep=""), empty.ok=FALSE)
         for(g in 1:length(Z)){
           nameZg <- paste("Z",g,sep="")
           if(nameZg%in%names(paraCon)){
-            assertList(paraCon[[nameZg]], types=c("vector", "matrix", "array")) #should be named list
+            checkmate::assertList(paraCon[[nameZg]], types=c("vector", "matrix", "array")) #should be named list
             #paraCon may obtain elements ("M.ineq" and "b.ineq") and/or ("M.eq" and "b.eq")
             namesparaCon <- names(paraCon[[nameZg]])
-            assertSubset(namesparaCon, c("M.ineq", "b.ineq", "M.eq", "b.eq"))
+            checkmate::assertSubset(namesparaCon, c("M.ineq", "b.ineq", "M.eq", "b.eq"))
             if( ("M.ineq"%in%namesparaCon)&!("b.ineq"%in%namesparaCon) |
                 !("M.ineq"%in%namesparaCon)&("b.ineq"%in%namesparaCon)){
               stop("Neither/both M.ineq and b.ineq should be provided in paraCon")
@@ -173,20 +174,20 @@ ecpc <- function(Y,X,
       }
       
       #check intercept term used for Z; intrcpt.bam
-      assertLogical(intrcpt.bam)
+      checkmate::assertLogical(intrcpt.bam)
       
       #check type of method used for Z; bam.method
-      assertSubset(bam.method, c("GCV.Cp", "GACV.Cp", "REML", "P-REML", "ML", "P-ML", "fREML"))
+      checkmate::assertSubset(bam.method, c("GCV.Cp", "GACV.Cp", "REML", "P-REML", "ML", "P-ML", "fREML"))
     }
   }else{ #!is.null(groupsets)
     #check groupsets is a list of lists of vectors of integers (covariate indices)
-    assertList(groupsets, types=c("list"), min.len=1)
+    checkmate::assertList(groupsets, types=c("list"), min.len=1)
     for(g in 1:length(groupsets)){
-      assertList(groupsets[[g]], types="integerish", null.ok = TRUE)
+      checkmate::assertList(groupsets[[g]], types="integerish", null.ok = TRUE)
     }
     
     #check groupsets.grouplvl (NULL or list)
-    assertList(groupsets.grouplvl, types=c("list","null"), null.ok = TRUE)
+    checkmate::assertList(groupsets.grouplvl, types=c("list","null"), null.ok = TRUE)
     if(length(groupsets.grouplvl)>0){
       #length should equal the number of group sets
       if(length(groupsets.grouplvl)!=length(groupsets)){
@@ -196,7 +197,7 @@ ecpc <- function(Y,X,
       }
       #elements in the group set on the group level should contain integers
       for(g in 1:length(groupsets.grouplvl)){
-        assertList(groupsets.grouplvl[[g]], types="integerish", null.ok = TRUE)
+        checkmate::assertList(groupsets.grouplvl[[g]], types="integerish", null.ok = TRUE)
       }
     }
     
@@ -210,68 +211,68 @@ ecpc <- function(Y,X,
         stop("Number of elements in hypershrinkage should match that of groupsets")
       }
       for(g in 1:length(hypershrinkage)){
-        assertString(hypershrinkage[g]) #should be string
-        assertSubset(unlist(strsplit(hypershrinkage[g], split=',')),
+        checkmate::assertString(hypershrinkage[g]) #should be string
+        checkmate::assertSubset(unlist(strsplit(hypershrinkage[g], split=',')),
                      c("none","ridge","lasso","hierLasso")) #should be combination of these types
       }
     }
   }
   
   #check unpen
-  assertIntegerish(unpen, null.ok=TRUE)
+  checkmate::assertIntegerish(unpen, null.ok=TRUE)
   
   #check intrcpt
-  assertLogical(intrcpt, len = 1)
+  checkmate::assertLogical(intrcpt, len = 1)
   
   #check model
-  assert(checkSubset(model, c("linear", "logistic", "cox")),
+  checkmate::assert(checkSubset(model, c("linear", "logistic", "cox")),
          class(model)[1]=="family")
   
   #check postselection
-  assertScalar(postselection)
-  assert(postselection==FALSE,
+  checkmate::assertScalar(postselection)
+  checkmate::assert(postselection==FALSE,
          checkSubset(postselection,c( "elnet,dense", "elnet,sparse", 
                      "BRmarginal,dense", "BRmarginal,sparse", "DSS")))
   
   #check maxsel
-  assertIntegerish(maxsel, lower=1, upper=dim(X)[2]-1) #must be integers and fewer than number of variables
+  checkmate::assertIntegerish(maxsel, lower=1, upper=dim(X)[2]-1) #must be integers and fewer than number of variables
   
   #check lambda
-  assertScalar(lambda, null.ok=TRUE, na.ok = TRUE)
-  assert(checkNumeric(lambda, null.ok=TRUE),
+  checkmate::assertScalar(lambda, null.ok=TRUE, na.ok = TRUE)
+  checkmate::assert(checkNumeric(lambda, null.ok=TRUE),
          checkString(lambda))
   if(testString(lambda)){
-    assert(grepl("ML",lambda), grepl("CV", lambda))
+    checkmate::assert(grepl("ML",lambda), grepl("CV", lambda))
   }
   
   #check fold
-  assertIntegerish(fold, lower=2, upper = dim(X)[1])
+  checkmate::assertIntegerish(fold, lower=2, upper = dim(X)[1])
   
   #check sigmasq
-  assertNumeric(sigmasq, lower=0, len=1, null.ok=TRUE)
+  checkmate::assertNumeric(sigmasq, lower=0, len=1, null.ok=TRUE)
   
   #check w
-  assertNumeric(w, lower=0, len=ifelse(!is.null(Z), length(Z), length(groupsets)), 
+  checkmate::assertNumeric(w, lower=0, len=ifelse(!is.null(Z), length(Z), length(groupsets)), 
                 null.ok = TRUE)
   
   #check nsplits
-  assertIntegerish(nsplits, lower=1)
+  checkmate::assertIntegerish(nsplits, lower=1)
   
   #check weights
-  assertLogical(weights, len=1)
+  checkmate::assertLogical(weights, len=1)
   
   #check profplotRSS
-  assertLogical(profplotRSS, len=1)
+  checkmate::assertLogical(profplotRSS, len=1)
   
   #check test response Y2
-  assert(checkVector(Y2, null.ok=TRUE), checkMatrix(Y2, null.ok=TRUE), 
+  checkmate::assert(checkVector(Y2, null.ok=TRUE), checkMatrix(Y2, null.ok=TRUE), 
          checkArray(Y2, max.d=2, null.ok=TRUE))
-  assert(checkLogical(Y2, null.ok=TRUE), checkFactor(Y2, n.levels=2, null.ok=TRUE), 
+  checkmate::assert(checkLogical(Y2, null.ok=TRUE), checkFactor(Y2, n.levels=2, null.ok=TRUE), 
          checkNumeric(Y2, null.ok=TRUE))
   
   #check test observed data X2
-  assert(checkMatrix(X2, null.ok=TRUE), checkArray(X2, max.d=2, null.ok=TRUE))
-  assertNumeric(X2, null.ok=TRUE)
+  checkmate::assert(checkMatrix(X2, null.ok=TRUE), checkArray(X2, max.d=2, null.ok=TRUE))
+  checkmate::assertNumeric(X2, null.ok=TRUE)
   
   #check whether dimensions Y2 and X2 match
   if(!is.null(Y2)){
@@ -289,27 +290,27 @@ ecpc <- function(Y,X,
   }
   
   #check compare
-  assertScalar(compare)
-  assert(checkLogical(compare),
+  checkmate::assertScalar(compare)
+  checkmate::assert(checkLogical(compare),
          checkString(compare))
   if(testString(compare)){
-    assert(grepl("ML",compare), grepl("CV", compare))
+    checkmate::assert(grepl("ML",compare), grepl("CV", compare))
   }
   
   #check mu
-  assertLogical(mu, len=1)
+  checkmate::assertLogical(mu, len=1)
   
   #check normalise
-  assertLogical(normalise, len=1)
+  checkmate::assertLogical(normalise, len=1)
   
   #check silent
-  assertLogical(silent, len=1)
+  checkmate::assertLogical(silent, len=1)
   
   #check datablocks
-  assertList(datablocks, types="integerish", null.ok=TRUE)
+  checkmate::assertList(datablocks, types="integerish", null.ok=TRUE)
   
   #check est_beta_method
-  assertSubset(est_beta_method, c("glmnet", "multiridge"))
+  checkmate::assertSubset(est_beta_method, c("glmnet", "multiridge"))
   
   #Save input colnames/rownames to return in output
   colnamesX <- colnames(X)
@@ -2788,56 +2789,27 @@ ecpc <- function(Y,X,
           x<-setdiff(x,zeroV)
           Btau <- ((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1)
           #Btau <- pmax(0,((betasinit[x]^2-(muinitp[x]+L[x,]%*%(R[,x]%*%(muhatp[x]-muinitp[x])))^2)/V[x]-1))
- 
-          Ln2 <- try(t(apply(t(c(1/V[x])*L[x,,drop=FALSE]), 2, rep, n) *
-                         apply(L[x,,drop=FALSE], 1, rep, each=n)), silent=TRUE) #pxn^2 matrix
-          Rn2 <- try(matrix(R[,x,drop=FALSE]%*%(t(apply(R[,x,drop=FALSE] , 2, rep, dim(Zt)[1])) *
-                                                  t(apply(Zt , 2, rep, each=n)) * c(tauglobal[datablockNo[x]])), n^2, dim(Zt)[1], byrow=FALSE),
-                     silent=TRUE)#n^2xG matrix
-          if(class(Rn2)[1]=="try-error"){
-            rm(Ln2)
-            start <- 1; step <- 1000
-            part <- start:(start+step-1)
-            A <- Matrix::tcrossprod((L[x[part],]%*%R[,x])^2/c(V[x[part]]),
-                                    Zt[,x,drop=FALSE]*c(tauglobal[datablockNo[x]]))
+          
+          #break up in parts as pxp matrix takes too much memory
+          #most intensive matrix multplicatian step*(np + pG)
+          #for step*(np + pG)=15*10^9 memory still fine
+          
+          nsteps <- ceiling(length(x)^2*(n+sum(G))/15/10^9)
+          step <- ceiling(length(x)/nsteps)
+          start <- 1
+          part <- start:(start+step-1)
+          A <- Matrix::tcrossprod((L[x[part],,drop=FALSE]%*%R[,x,drop=FALSE])^2/c(V[x[part]]),
+                                  Zt[,x,drop=FALSE]*c(tauglobal[datablockNo[x]]))
+          start <- start+step
+          while(start < length(x)){
+            part <- start:min(length(x),(start+step-1))
+            A2 <- Matrix::tcrossprod((L[x[part],,drop=FALSE]%*%R[,x,drop=FALSE])^2/c(V[x[part]]),
+                                     Zt[,x,drop=FALSE]*c(tauglobal[datablockNo[x]]))
+            A <- rbind(A, A2)
+            rm(A2)
             start <- start+step
-            while(start < length(x)){
-              part <- start:min(length(x),(start+step-1))
-              A2 <- Matrix::tcrossprod((L[x[part],]%*%R[,x])^2/c(V[x[part]]),
-                                       Zt[,x,drop=FALSE]*c(tauglobal[datablockNo[x]]))
-              A <- rbind(A, A2)
-              rm(A2)
-              start <- start+step
-            }
-          }else{
-            if(class(Ln2)[1] == "try-error"){
-              half <- 1:floor(length(x)/2)
-              Ln2half1 <- try(t(apply(t(c(1/V[x[half]])*L[x[half],,drop=FALSE]), 2, rep, n) *
-                                  apply(L[x[half],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
-              if(class(Ln2half1)[1]=="try-error"){
-                start <- 1; step <- 1000
-                part <- start:(start+step-1)
-                Ln2part1 <- try(t(apply(t(c(1/V[x[part]])*L[x[part],,drop=FALSE]), 2, rep, n) *
-                                    apply(L[x[part],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
-                A <- Ln2part1 %*% Rn2
-                start <- start+step
-                while(start < length(x)){
-                  part <- start:min(length(x),(start+step-1))
-                  Ln2part1 <- try(t(apply(t(c(1/V[x[part]])*L[x[part],,drop=FALSE]), 2, rep, n) *
-                                      apply(L[x[part],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
-                  A <- rbind(A, Ln2part1 %*% Rn2)
-                  start <- start+step
-                }
-              }else{
-                A <- Ln2half1 %*% Rn2
-                Ln2half1 <- try(t(apply(t(c(1/V[x[-half]])*L[x[-half],,drop=FALSE]), 2, rep, n) *
-                                    apply(L[x[-half],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
-                A <- rbind(A, Ln2half1 %*% Rn2)
-              }
-            }else{
-              A <- Ln2 %*% Rn2
-            }
           }
+          A <- as.matrix(A)
           
           
           # (L[block,]%*%R)^2%*%Z
@@ -2866,51 +2838,16 @@ ecpc <- function(Y,X,
             
             #make intercept
             if(intrcpt.bam){
-              if(class(Rn2)[1]=="try-error"){
-                start <- 1; step <- 1000
-                part <- start:(start+step-1)
-                Aintrcpt <- ((L[x[part],,drop=FALSE]%*%R[,x,drop=FALSE])^2/c(V[x[part]]))%*%c(tauglobal[datablockNo[x]])
+              start <- 1
+              part <- start:(start+step-1)
+              Aintrcpt <- ((L[x[part],,drop=FALSE]%*%R[,x,drop=FALSE])^2/c(V[x[part]]))%*%c(tauglobal[datablockNo[x]])
+              start <- start+step
+              while(start < length(x)){
+                part <- start:min(length(x),(start+step-1))
+                A2 <- ((L[x[part],,drop=FALSE]%*%R[,x,drop=FALSE])^2/c(V[x[part]]))%*%c(tauglobal[datablockNo[x]])
+                Aintrcpt <- rbind(Aintrcpt, A2)
+                rm(A2)
                 start <- start+step
-                while(start < length(x)){
-                  part <- start:min(length(x),(start+step-1))
-                  A2 <- ((L[x[part],,drop=FALSE]%*%R[,x,drop=FALSE])^2/c(V[x[part]]))%*%c(tauglobal[datablockNo[x]])
-                  Aintrcpt <- rbind(Aintrcpt, A2)
-                  rm(A2)
-                  start <- start+step
-                }
-              }else{
-                if(class(Ln2)[1]== "try-error"){
-                  if(class(Ln2half1)[1]=="try-error"){
-                    start <- 1; step <- 1000 #break up in parts of 1000 variables
-                    part <- start:(start+step-1)
-                    Ln2part1 <- try(t(apply(t(c(1/V[x[part]])*L[x[part],,drop=FALSE]), 2, rep, n) *
-                                        apply(L[x[part],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
-                    Aintrcpt <- Ln2part1 %*% c(R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE]) *
-                                                                     rep(1,length(x)) * c(tauglobal[datablockNo[x]])))
-                    start <- start+step
-                    while(start < length(x)){
-                      part <- start:min(length(x),(start+step-1))
-                      Ln2part1 <- try(t(apply(t(c(1/V[x[part]])*L[x[part],,drop=FALSE]), 2, rep, n) *
-                                          apply(L[x[part],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
-                      Aintrcpt <- rbind(Aintrcpt, Ln2part1 %*% c(R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE]) *
-                                                                         rep(1,length(x)) * c(tauglobal[datablockNo[x]]))))
-                      start <- start+step
-                    }
-                  }else{
-                    half <- 1:floor(length(x)/2)
-                    Ln2half1 <- try(t(apply(t(c(1/V[x[half]])*L[x[half],,drop=FALSE]), 2, rep, n) *
-                                        apply(L[x[half],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
-                    Aintrcpt <- Ln2half1 %*% c(R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE]) *
-                                                                     rep(1,length(x)) * c(tauglobal[datablockNo[x]])))
-                    Ln2half1 <- try(t(apply(t(c(1/V[x[-half]])*L[x[-half],,drop=FALSE]), 2, rep, n) *
-                                        apply(L[x[-half],,drop=FALSE], 1, rep, each=n)), silent=TRUE) #(p/2)xn^2 matrix
-                    Aintrcpt <- rbind(Aintrcpt, Ln2half1 %*% c(R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE]) *
-                                                                                     rep(1,length(x)) * c(tauglobal[datablockNo[x]]))))
-                  }
-                }else{
-                  Aintrcpt <- Ln2 %*% c(R[,x,drop=FALSE]%*%(t(R[,x,drop=FALSE]) *
-                                                              rep(1,length(x)) * c(tauglobal[datablockNo[x]])))
-                }
               }
               Aintrcpt <- as.matrix(Aintrcpt)
             }
@@ -3184,6 +3121,7 @@ ecpc <- function(Y,X,
                        },
                        "none"={
                          sc <- sqrt(sum(A^2, na.rm=TRUE))
+                         
                          gamma <- rep(0,G)
                          gamma[indnot0] <- solve(t(A[,indnot0]/sc)%*%(A[,indnot0]/sc),
                                                  t(A[,indnot0]/sc)%*%(Btau/sc))
