@@ -35,7 +35,7 @@ Response data; n-dimensional vector (n: number of samples) for linear and logist
 Observed data; (nxp)-dimensional matrix (p: number of covariates) with each row the observed high-dimensional feature vector of a sample.
 }
 \item{Z}{
- List with m co-data matrices. Each element is a (pxG)-dimensional co-data matrix containing co-data on the p   variables. Co-data should either be provided in `Z' or `groupsets'. 
+ List with m co-data matrices. Each element is a (pxG)-dimensional co-data matrix containing co-data on the p variables. Co-data should either be provided in `Z' or `groupsets'. Co-data should not contain any missing values, see details below how to handle missing data.
 }
 \item{paraPen}{
   A list with generalised ridge penalty matrices used as hypershrinkage in estimating co-data weights, e.g. \code{list("Z2" = list("S1" = M1,"S2"= M2))} when the second co-data source given in `Z' should be penalised by a penalty matrix `M1' and `M2'. The names of the elements of the list should  be equal to `Zi' where `i' matches the index of the co-data matrix. The list elements should again be lists with elements `Si' for i=1,2,.. different generalised ridge penalty matrices. 
@@ -200,6 +200,8 @@ with \eqn{\tau_global^2} the global scaling parameter, the scalar \eqn{w_d} the 
 \strong{Co-data and hypershrinkage input:}
 
 Co-data should be provided in a list of co-data matrices given in argument 'Z' or in a list of group sets given in 'groupsets'. The latter may be used only for (overlapping) groups of variables, whereas the first may be used for continuous co-data too. In most cases, providing co-data in 'Z' is faster, so users may want to transform co-data from a group set to a co-data matrix with \code{\link{createZforGroupset}}. 
+
+Co-data matrices given in 'Z' should not contain any missing values. When the missingness is deemed uninformative, existing methods may be used to impute the missing values, e.g. by the co-data variable mean. When the missingness is suspected to be informative, missing values should be set to 0 and an extra categorical co-data variable (1 for missing 0 else) should be included.
 
 The co-data variable weights are estimated with an extra level of hypershrinkage, i.e. with a penalised estimator (see below). The type of hypershrinkage may differ per co-data source. Providing these types depends on whether the co-data is provided in 'Z' or 'groupsets'. 
 When co-data is provided in 'Z', the hypershrinkage may be provided in the arguments 'paraPen', 'paraCon', 'intrcpt.bam' and 'bam.method' (second line above in usage).
