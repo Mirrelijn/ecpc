@@ -1415,8 +1415,8 @@ As co-data, we use one source of the true effect size.
 
 To rerun the analysis and generation of toy data, set the following variables to `TRUE`:
 ```{r}
-run_n <- FALSE
-run_p <- FALSE
+run_n <- F
+run_p <- F
 generateData <- TRUE
 ```
 
@@ -1443,7 +1443,7 @@ Y_i\overset{ind.}{\sim} N(X_{i,:}\beta, 1), \ i=1,..,n.
 
 ```{r}
 # Simulate toy data ------
-p_all <- c(1000, 2000, 5000, 10000, 20000, 50000, 100000)
+p_all <- c(1000, 2000, 5000, 10000, 20000, 50000)
 n_all <- c(50, 100, 200, 500, 1000)
 
 n2<-100 #sample size test data set
@@ -1509,7 +1509,7 @@ if(run_n){
     #ecpc linear co-data model
     mem <- peakRAM({
       fit <- ecpc(Y=AllData_n[[i]]$Y,X=AllData_n[[i]]$Xctd,
-                Z=list(ZI),
+                Z=list(ZI), intrcpt.bam = FALSE,
                 model="linear",postselection=FALSE,est_beta_method = "multiridge")
     })
     temp <- data.frame("Method"="ecpc_linear", "Time"=mem[[2]], "Peak_memory"=mem[[4]],
@@ -1521,7 +1521,7 @@ if(run_n){
       fit <- ecpc(Y=AllData_n[[i]]$Y,X=AllData_n[[i]]$Xctd,
                   Z=list(Zs),
                   paraPen=list(Z1=list(S1=S1)),
-                  bam.method="ML", intrcpt.bam = F,
+                  bam.method="ML", intrcpt.bam = FALSE,
                   model="linear",postselection=FALSE,
                   est_beta_method = "multiridge")
     })
@@ -1535,7 +1535,7 @@ if(run_n){
                   Z=list(Zs),
                   paraPen=list(Z1=list(S1=S1)),
                   paraCon = list(Z1=Con.p),
-                  intrcpt.bam = F,
+                  intrcpt.bam = FALSE,
                   model="linear",postselection = FALSE,
                   est_beta_method = "multiridge")
     })
@@ -1583,18 +1583,19 @@ if(run_p){
   
   for(i in 1:length(p_all)){
     p = p_all[i]
+    print(Sys.time(),' ',p_all[i])
     
     #Compute co-data for p
     Z <- abs(AllData_p[[i]]$beta)
     ZI <- cbind(rep(1,p),abs(AllData_p[[1]]$beta))
-    Zs <- createZforSplines(values=Z, G=20, bdeg=3) 
+    Zs <- createZforSplines(values=c(Z), G=20, bdeg=3) 
     S1 <- createS(orderPen=2, G=20) #create 2nd order difference penalty matrix (same for all co-data)
     Con.p <- createCon(G=20, shape="positive")
     
     #ecpc linear co-data model
     mem <- peakRAM({
       fit <- ecpc(Y=AllData_p[[i]]$Y,X=AllData_p[[i]]$Xctd,
-                  Z=list(ZI),
+                  Z=list(ZI), intrcpt.bam=FALSE,
                   model="linear",postselection=FALSE,est_beta_method = "multiridge")
     })
     temp <- data.frame("Method"="ecpc_linear", "Time"=mem[[2]], "Peak_memory"=mem[[4]],
@@ -1606,7 +1607,7 @@ if(run_p){
       fit <- ecpc(Y=AllData_p[[i]]$Y,X=AllData_p[[i]]$Xctd,
                   Z=list(Zs),
                   paraPen=list(Z1=list(S1=S1)),
-                  bam.method="ML", intrcpt.bam = F,
+                  bam.method="ML", intrcpt.bam = FALSE,
                   model="linear",postselection=FALSE,
                   est_beta_method = "multiridge")
     })
@@ -1620,7 +1621,7 @@ if(run_p){
                   Z=list(Zs),
                   paraPen=list(Z1=list(S1=S1)),
                   paraCon = list(Z1=Con.p),
-                  intrcpt.bam = F,
+                  intrcpt.bam = FALSE,
                   model="linear",postselection = FALSE,
                   est_beta_method = "multiridge")
     })
